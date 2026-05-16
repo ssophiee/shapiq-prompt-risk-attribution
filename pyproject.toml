@@ -18,6 +18,8 @@ classifiers = [
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "dvc>=3.67.1",
+    "dvc-gdrive>=3.0.1",
     "fastapi==0.115.6",
     "torch==2.6.0",
     "typer==0.15.1",
@@ -37,21 +39,10 @@ dev = [
 ]
 
 
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cpu" },
-]
-torchvision = [
-    { index = "pytorch-cpu" },
-]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
 
 [tool.ruff]
 line-length = 120
+lint.select = ["I", "E", "F", "B", "UP"]
 
 [tool.coverage.run]
 omit = ["tests/*"]

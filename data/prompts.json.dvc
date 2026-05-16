@@ -1,0 +1,5 @@
+outs:
+- md5: e6ad1a760300487d250ca0317cf51d4e
+  size: 2950
+  hash: md5
+  path: prompts.json

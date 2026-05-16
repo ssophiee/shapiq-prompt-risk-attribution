@@ -1,29 +1,14 @@
-from pathlib import Path
-
-import typer
-from torch.utils.data import Dataset
+from datasets import load_dataset
 
 
-class MyDataset(Dataset):
-    """My custom dataset."""
-
-    def __init__(self, data_path: Path) -> None:
-        self.data_path = data_path
-
-    def __len__(self) -> int:
-        """Return the length of the dataset."""
-
-    def __getitem__(self, index: int):
-        """Return a given sample from the dataset."""
-
-    def preprocess(self, output_folder: Path) -> None:
-        """Preprocess the raw data and save it to the output folder."""
-
-def preprocess(data_path: Path, output_folder: Path) -> None:
-    print("Preprocessing data...")
-    dataset = MyDataset(data_path)
-    dataset.preprocess(output_folder)
+def load_wildguard(token: str, split: str = "test") -> list[dict]:
+    ds = load_dataset("allenai/wildguardmix", "wildguardtest", token=token)
+    return list(ds[split])
 
 
-if __name__ == "__main__":
-    typer.run(preprocess)
+def get_harmful_examples(token: str, split: str = "test") -> list[dict]:
+    examples = load_wildguard(token, split)
+    return [
+        ex for ex in examples
+        if ex.get("prompt_harm_label") == "harmful" and ex.get("prompt")
+    ]

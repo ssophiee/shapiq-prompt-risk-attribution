@@ -11,4 +11,4 @@ COPY LICENSE LICENSE
 
 RUN uv sync --frozen
 
-ENTRYPOINT ["uv", "run", "src/shapiq_cot/train.py"]
+ENTRYPOINT ["uv", "run", "src/shapiq_cot/pipeline.py"]

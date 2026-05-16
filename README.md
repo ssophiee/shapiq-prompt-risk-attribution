@@ -33,7 +33,7 @@ The directory structure of the project looks like this:
 │   │   ├── data.py
 │   │   ├── evaluate.py
 │   │   ├── models.py
-│   │   ├── train.py
+│   │   ├── pipeline.py
 │   │   └── visualize.py
 └── tests/                    # Tests
 │   ├── __init__.py
