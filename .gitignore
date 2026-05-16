@@ -1,3 +1,4 @@
 .env
 reference/
 data/prompts.json
+**/.DS_Store

@@ -60,9 +60,9 @@ def run_attribution(question: str, system: str, few_shot: str, model, tokenizer)
     n = len(cot_steps)
     shapley_values: list[float] = [float(sv.values[i + 1]) for i in range(n)]
     interactions: dict[str, float] = {
-        f"{i},{j}": float(v)
-        for (i, j), v in zip(ksii.interactions, ksii.values)
-        if len((i, j)) == 2
+        f"{t[0]},{t[1]}": float(v)
+        for t, v in zip(ksii.interactions, ksii.values)
+        if len(t) == 2
     }
 
     return {
