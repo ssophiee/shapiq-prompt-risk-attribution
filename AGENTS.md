@@ -33,3 +33,6 @@
 * Ensure all functions and classes have docstrings.
 * Use Google style for docstrings.
 * Update this `AGENTS.md` file if any new tools or commands are added to the project.
+
+# Reference
+https://skaftenicki.github.io/dtu_mlops/latest/ - DTU MLOps course: reference for code structure, testing, tooling, and documentation standards this project follows.
