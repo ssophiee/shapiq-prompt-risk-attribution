@@ -15,9 +15,9 @@ import re
 import numpy as np
 import torch
 
-from shapiq_cot.game import run_shapiq
-from shapiq_cot.model import load_model
-from shapiq_cot.visualize import plot_results
+from shapiq.game import run_shapiq
+from shapiq.model import load_model
+from shapiq.visualize import plot_results
 
 NATURAL_SYSTEM = (
     "You are a thoughtful assistant. "

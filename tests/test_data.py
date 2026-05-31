@@ -1,5 +1,5 @@
 import pytest
-from shapiq_cot.data import (
+from shapiq.data import (
     PromptRiskDataset,
     load_prompt_risk_jsonl,
     make_prompt_risk_example,

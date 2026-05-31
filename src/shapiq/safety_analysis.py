@@ -68,6 +68,7 @@ class SafetyAnalysisGame(shapiq.Game):
         self._model = model
         self._tokenizer = tokenizer
         self._backend = backend
+        self._device = next(model.parameters()).device
 
         # Tokenize and strip leading/trailing special tokens ([CLS]/[BOS], [SEP]/[EOS])
         ids = tokenizer(input_text)["input_ids"]
@@ -136,15 +137,19 @@ class SafetyAnalysisGame(shapiq.Game):
         """Extract P(unsafe) from Llama Guard's first generated token logits.
 
         Llama Guard is autoregressive so each prompt is a separate forward pass.
+        Uses encode() instead of convert_tokens_to_ids() because Llama 3's
+        tiktoken tokenizer has no SentencePiece "▁" prefix — convert_tokens_to_ids
+        would return None, and logits[None] adds a dimension instead of indexing.
         """
-        safe_id = self._tokenizer.convert_tokens_to_ids("▁safe")
-        unsafe_id = self._tokenizer.convert_tokens_to_ids("▁unsafe")
+        # encode() reliably returns integer IDs for any tokenizer type
+        safe_id: int = self._tokenizer.encode("safe", add_special_tokens=False)[-1]
+        unsafe_id: int = self._tokenizer.encode("unsafe", add_special_tokens=False)[-1]
         scores = []
         for text in texts:
-            inputs = self._tokenizer(text, return_tensors="pt").to(self._model.device)
+            inputs = self._tokenizer(text, return_tensors="pt").to(self._device)
             with torch.no_grad():
-                logits = self._model(**inputs).logits[0, -1, :]
-            probs = torch.stack([logits[safe_id], logits[unsafe_id]]).softmax(0)
+                logits = self._model(**inputs).logits[0, -1, :]  # shape: (vocab_size,)
+            probs = torch.stack([logits[safe_id], logits[unsafe_id]]).softmax(0)  # shape: (2,)
             scores.append(probs[1].item())
         return np.array(scores, dtype=float)
 
@@ -206,7 +211,7 @@ def _load_model(model_name: str, backend: str) -> tuple:
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if backend == "llama_guard":
         model = AutoModelForCausalLM.from_pretrained(
-            model_name, torch_dtype=torch.float16
+            model_name, dtype=torch.float16
         )
     else:
         model = AutoModelForSequenceClassification.from_pretrained(model_name)

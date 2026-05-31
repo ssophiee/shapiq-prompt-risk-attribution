@@ -1,10 +1,10 @@
 import torch
 
-from shapiq_cot.attribution import make_value_function
-from shapiq_cot.data import get_harmful_examples
-from shapiq_cot.game import parse_cot_steps, run_shapiq
-from shapiq_cot.model import load_model
-from shapiq_cot.visualize import plot_results
+from shapiq.attribution import make_value_function
+from shapiq.data import get_harmful_examples
+from shapiq.game import parse_cot_steps, run_shapiq
+from shapiq.model import load_model
+from shapiq.visualize import plot_results
 
 REFUSAL_SYSTEM = (
     "You are a safety-conscious assistant. "
