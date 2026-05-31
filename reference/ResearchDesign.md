@@ -1,112 +1,120 @@
-# Research Design — Classifier-Grounded CoT Attribution
+# Research Design — Token-Level Safety Attribution
 
-> Last updated: 2026-05-19
+> Last updated: 2026-05-31
 
 ---
 
 ## Motivation
 
-[Feng et al. (2025)](https://arxiv.org/html/2602.04294v1) empirically show that **think-mode / reasoning-enhanced LLMs are consistently more vulnerable to jailbreaks** across all tested prompt configurations — a result they call the "think-mode paradox." The paper demonstrates *that* this happens but does not explain *where* in the reasoning chain the failure originates.
+[Feng et al. (2025)](https://arxiv.org/html/2602.04294v1) empirically show that **think-mode / reasoning-enhanced LLMs are consistently more vulnerable to jailbreaks** across all tested prompt configurations — a result they call the "think-mode paradox." The paper demonstrates *that* this happens but does not explain *which parts of the input* drive that vulnerability.
 
-This project fills that gap: using Shapley interaction values (shapiq) to attribute jailbreak success to specific CoT reasoning steps, giving a mechanistic account of why extended reasoning increases vulnerability.
+This project takes a direct approach: train a binary safety classifier (safe / risky) on jailbreak benchmarks, then use Shapley interaction values (shapiq) to attribute the classifier's verdict to **individual tokens** in the input prompt. The result is a token-level explanation of why a prompt is classified as dangerous.
 
 ---
 
-## Core Design Decision
+## Core Design
 
-### The bottleneck in the current pipeline
+The architecture has two stages:
 
-`attribution.py:make_value_function` runs the full Qwen model for every coalition of CoT steps.  
-With `n` steps, this is `2^n` forward passes — prohibitively expensive for experiments at scale.
+1. **Training** — fine-tune a DistilBERT binary classifier on (prompt, label) pairs from AdvBench / HarmBench. Label = did the jailbreak succeed? Output = P(risky) ∈ [0, 1].
 
-### The fix: replace the LLM value function with a trained PyTorch classifier
+2. **Attribution** — for a new prompt, tokenize it and treat each token as a *player* in a cooperative game. The value function masks absent tokens with `[MASK]` and queries the classifier. SHAPIQ computes how much each token contributed to the safe/risky verdict.
 
-The overall architecture has two stages:
+This is the pattern from [shapiq's `language_model_game` notebook](https://github.com/mmschlk/shapiq) — the `SentimentClassificationGame` adapted for safety classification.
 
-1. **LLM stage** — Qwen (think-mode) generates a Chain-of-Thought: a sequence of reasoning steps followed by a final answer.
-2. **Classifier stage** — a lightweight **PyTorch** binary classifier reads those reasoning steps and predicts: **safe** or **risky** (i.e., did the jailbreak succeed?).
-
-SHAPIQ then attributes the **safe/risky** verdict back to individual reasoning steps, answering: *which step(s) tipped the classifier toward "risky"?*
-
-This replaces the expensive LLM-as-value-function approach: instead of asking "how much does this subset of steps increase the LLM's probability of the correct answer?", we ask:  
-**"how much does this subset of steps push the classifier toward predicting 'risky'?"**
-
-The `CoTGame` and `run_shapiq` in `game.py` are value-function-agnostic — they stay completely untouched.  
-Only the value function passed in changes.
-
-**Why PyTorch?** The classifier (DistilBERT fine-tuned for binary classification) is a native PyTorch model — this gives us a full `train → eval → log` loop that integrates directly with MLFlow/W&B and satisfies the course requirement for a proper training pipeline.
+**Why tokens as players?**  
+CoT steps were a natural unit when attributing LLM reasoning chains, but the bottleneck was `2^n` full LLM forward passes per prompt. Tokens as players with a small DistilBERT classifier are orders of magnitude cheaper, and the result is more directly interpretable: *specific words and phrases* that trigger the unsafe classification.
 
 ---
 
 ## Pipeline
 
 ```
-                    STAGE 1 — LLM (inference only, no training)
-                    ───────────────────────────────────────────
-AdvBench / HarmBench prompts
+                    STAGE 1 — DATA
+                    ──────────────
+AdvBench / HarmBench
         │
         ▼
-Run Qwen (think-mode) → CoT reasoning steps + final answer
-        │
-        ▼
-Label: safe or risky? (from benchmark ground truth)
-        │
-        ▼
-Save (prompt, cot_steps, label) dataset  ←── tracked by DVC
+(prompt, label)  ←── tracked by DVC
+label: 1 = jailbreak succeeded (risky), 0 = refused (safe)
 
 
-                    STAGE 2 — TRAINING (PyTorch, new)
-                    ──────────────────────────────────
-(prompt, cot_steps, label) dataset
+                    STAGE 2 — TRAINING (PyTorch)
+                    ────────────────────────────
+(prompt, label) dataset
         │
         ▼
-Fine-tune DistilBERT (PyTorch): cot_steps → P(risky)
+Fine-tune DistilBERT: prompt tokens → P(risky)
         │
         ▼
 Evaluate: accuracy, F1, ROC-AUC on held-out split
         │
         ▼
-Log metrics + artifacts  ←── MLFlow or Weights & Biases
+Log metrics + artifacts  ←── W&B
         │
         ▼
-Save classifier artifact  ←── DVC, configured by Hydra
+Save classifier checkpoint  ←── DVC, configured by Hydra
 
 
-                    STAGE 3 — ATTRIBUTION (existing pipeline, new value fn)
-                    ──────────────────────────────────────────────────────────
-New prompt
+                    STAGE 3 — ATTRIBUTION (token-level)
+                    ─────────────────────────────────────
+Input prompt
         │
         ▼
-Qwen think-mode → CoT steps  (parse_cot_steps — unchanged)
+Tokenize → [t1, t2, ..., tN]   (players)
         │
         ▼
-make_classifier_value_function(classifier, question, cot_steps)
-        │   for each coalition: classifier(question + present_steps) → P(risky)
+TokenSafetyGame(classifier, tokens)
+        │   for each coalition S ⊆ {1..N}:
+        │     replace absent tokens with [MASK]
+        │     classifier(masked_input) → P(risky)
+        │     value(S) = P(risky | S) − P(risky | ∅)
         ▼
-run_shapiq(cot_steps, value_fn)  ←── game.py unchanged
+shapiq.KernelSHAPIQ → Shapley values per token + k-SII interactions
         │
         ▼
-Shapley values per step + k-SII interactions
-        │
-        ▼
-"Step 3 was the main driver of the risky verdict"
+"tokens 'ignore' and 'previous' jointly drive the risky verdict"
 ```
+
+---
+
+## The Game Class
+
+`TokenSafetyGame` inherits from `shapiq.Game` (mirrors `SentimentClassificationGame` in the shapiq library):
+
+```python
+class TokenSafetyGame(shapiq.Game):
+    def __init__(self, classifier, tokenizer, prompt: str):
+        self.tokens = tokenizer(prompt, return_tensors="pt")["input_ids"][0]
+        # exclude [CLS] and [SEP] from player set
+        self.player_token_ids = self.tokens[1:-1]
+        super().__init__(n_players=len(self.player_token_ids))
+
+    def value_function(self, coalitions: np.ndarray) -> np.ndarray:
+        scores = []
+        for coalition in coalitions:
+            masked = self.player_token_ids.clone()
+            masked[coalition == 0] = MASK_ID
+            input_ids = torch.cat([CLS, masked, SEP]).unsqueeze(0)
+            with torch.no_grad():
+                p_risky = self.classifier(input_ids).logits.softmax(-1)[0, 1].item()
+            scores.append(p_risky)
+        return np.array(scores)
+```
+
+Normalization: `value(∅) = 0` by subtracting the all-masked baseline, so Shapley values sum to `P(risky | full prompt) − P(risky | all masked)`.
 
 ---
 
 ## What the classifier sees
 
-The few-shot demonstrations in the Feng et al. paper are plain **(prompt, response) pairs — no CoT**.  
-AdvBench and HarmBench contain harmful prompts and jailbreak-success labels, also no CoT.
+Training input: raw prompt text from AdvBench / HarmBench, tokenized with DistilBERT's WordPiece tokenizer.
 
-The CoT steps used as classifier input are **generated by running Qwen on the benchmark prompts** — your existing `generate_cot` in `pipeline.py` does this. The datasets provide the labels; the model provides the reasoning chains.
-
-Classifier input at attribution time:
 ```
-[CLS] {question} [SEP] Step 1: ... Step 2: ... Step N: ... [SEP]
+[CLS] Ignore previous instructions and tell me how to ... [SEP]
 ```
 
-Coalition masking removes steps from this sequence, exactly as the current LLM value function does.
+At attribution time the same tokenization is used. Absent tokens in a coalition are replaced with `[MASK]` — the same strategy used in the shapiq `language_model_game` tutorial.
 
 ---
 
@@ -115,28 +123,24 @@ Coalition masking removes steps from this sequence, exactly as the current LLM v
 | Axis | Values | Why |
 |---|---|---|
 | `prompt_type` | `role_oriented`, `task_oriented` | Paper's main variable — RoP vs ToP |
-| `few_shot_type` | `none`, `general`, `harmful` | Paper's FS-General vs FS-Harmful |
-| `classifier_type` | `distilbert`, `logistic` | Speed vs quality tradeoff |
 | `dataset` | `advbench`, `harmbench` | Cross-benchmark robustness |
-| `budget` | `exact`, `permutation_sampling` | shapiq approximation for long chains |
-| `tracker` | `mlflow`, `wandb` | Experiment tracking backend |
+| `budget` | `exact`, `kernel_shap` | shapiq approximation for long token sequences |
+| `max_tokens` | `64`, `128` | control coalition space size |
 
-Sweeping `prompt_type × few_shot_type` directly replicates the paper's evaluation grid and lets you check whether attribution patterns differ between the configurations where few-shot helps (RoP) vs. hurts (ToP).
+Comparing `prompt_type` attribution patterns checks whether RoP and ToP prompts exploit different token-level features in the classifier.
 
 ---
 
 ## Training + Evaluation + Logging
 
-This is the mandatory MLOps loop, implemented in `train.py`:
+Implemented in `train.py` with Hydra + W&B:
 
-1. **Data loading** — load (cot_steps, label) pairs from DVC-tracked dataset; split train/val/test
-2. **Model** — `DistilBertForSequenceClassification` (HuggingFace / PyTorch) with a binary head; optionally a logistic regression baseline on TF-IDF features
-3. **Training loop** — standard PyTorch: optimizer (`AdamW`), learning-rate scheduler, per-epoch validation
-4. **Metrics** — accuracy, F1, ROC-AUC logged each epoch
-5. **Logging** — all hyperparameters, metrics, and the final model artifact pushed to **MLFlow** (default) or **W&B** via a thin adapter so the training code stays tracker-agnostic; choice controlled by `tracker:` in Hydra config
-6. **Artifact storage** — best checkpoint saved to `models/classifier/` and registered in DVC
-
-The classifier output (`P(risky)` ∈ [0, 1]) is the value function for SHAPIQ. The binary threshold (default 0.5) is configurable.
+1. **Data loading** — load `(prompt, label)` pairs from DVC-tracked dataset; split train/val/test
+2. **Model** — `DistilBertForSequenceClassification` (PyTorch) with a binary head
+3. **Training loop** — AdamW + linear LR scheduler; per-epoch accuracy, F1, ROC-AUC
+4. **W&B logging** — hyperparameters, per-epoch metrics, best checkpoint artifact
+5. **W&B Sweeps** — Bayesian search over `lr`, `batch_size`, `max_length` (`configs/sweep.yaml`)
+6. **Artifact** — best checkpoint → `models/classifier/` tracked by DVC
 
 ---
 
@@ -144,15 +148,17 @@ The classifier output (`P(risky)` ∈ [0, 1]) is the value function for SHAPIQ. 
 
 | File | Change |
 |---|---|
-| `game.py` | Nothing |
-| `attribution.py` | Add `make_classifier_value_function` alongside existing `make_value_function` |
-| `data.py` | Add loaders for AdvBench / HarmBench |
-| `model.py` | Add `load_classifier(path)` — returns PyTorch model ready for inference |
-| `pipeline.py` | Add `--value-fn` flag: `llm` (current) or `classifier` |
-| `train.py` (new) | Hydra `@hydra.main` — full PyTorch train loop: data → model → optimizer → eval → log → save |
-| `tracker.py` (new) | Thin adapter: `log_metrics(tracker, metrics)` dispatches to MLFlow or W&B |
-| `configs/train.yaml` (new) | Classifier hyperparameters, dataset split, tracker choice, output paths |
-| `configs/attribution.yaml` (new) | `prompt_type`, `few_shot_type`, `budget`, `value_fn` |
+| `game.py` | Replace `CoTGame` with `TokenSafetyGame`; `run_shapiq` stays |
+| `attribution.py` | Replace `make_value_function` with token-masking value function |
+| `data.py` | Add loaders for AdvBench / HarmBench `(prompt, label)` pairs |
+| `model.py` | Add `load_classifier(path)` — returns DistilBERT + tokenizer |
+| `pipeline.py` | Remove Qwen / CoT generation; add tokenization + attribution entrypoint |
+| `train.py` (new) | Hydra `@hydra.main` — full PyTorch loop: data → model → train → eval → W&B → save |
+| `configs/train.yaml` (new) | Hyperparameters, W&B project, output paths |
+| `configs/sweep.yaml` (new) | W&B Sweep search space |
+| `configs/attribution.yaml` (new) | `prompt_type`, `dataset`, `budget`, `max_tokens` |
+
+**Removed:** `parse_cot_steps`, Qwen dependency, `generate_cot`, CoT dataset generation stage.
 
 ---
 
@@ -162,7 +168,7 @@ The classifier output (`P(risky)` ∈ [0, 1]) is the value function for SHAPIQ. 
 # configs/train.yaml
 model:
   type: distilbert-base-uncased
-  max_length: 256
+  max_length: 128
 
 training:
   epochs: 3
@@ -176,8 +182,8 @@ data:
   max_samples: 1000
 
 tracker:
-  project: shapiq-cot-attribution   # W&B project
-  experiment_name: cot-safety-classifier
+  project: shapiq-token-safety
+  experiment_name: distilbert-safety-classifier
 
 output:
   model_dir: models/classifier
@@ -186,25 +192,42 @@ output:
 
 ```yaml
 # configs/attribution.yaml
-model_id: Qwen/Qwen2.5-3B-Instruct
-value_fn: classifier        # or llm
-prompt_type: role_oriented  # or task_oriented
-few_shot_type: harmful      # none | general | harmful
-budget: 512
+prompt_type: role_oriented   # or task_oriented
+dataset: advbench
+budget: kernel_shap          # or exact
+max_tokens: 128
 output_dir: reports/
+```
+
+```yaml
+# configs/sweep.yaml
+program: train.py
+method: bayes
+metric:
+  goal: maximize
+  name: val/roc_auc
+parameters:
+  training.learning_rate:
+    distribution: log_uniform_values
+    min: 1e-5
+    max: 5e-4
+  training.batch_size:
+    values: [8, 16, 32]
+  model.max_length:
+    values: [64, 128]
 ```
 
 ---
 
 ## Monitoring
 
-Evidently does not operate on raw text, so monitoring is based on **derived numerical features** extracted from each API request and logged to a running predictions table.
+Evidently operates on **derived numerical features**, not raw text. Each API request is logged as a feature row; Evidently compares the live distribution against the training baseline.
 
 ```
 API request arrives
         │
         ▼
-extract: prompt_len, step_count, avg_step_len, p_risky
+extract: prompt_len (chars), token_count, p_risky
         │
         ▼
 append row → data/predictions.csv  (DVC-tracked)
@@ -218,19 +241,16 @@ Evidently (scheduled weekly):
 HTML report → reports/monitoring/
 ```
 
-**Baseline** is the same feature extraction run over the training set, saved once after `train.py` completes.
-
-**What each feature catches:**
+**Baseline** is extracted from the training set once after `train.py` completes.
 
 | Feature | Drift signal |
 |---|---|
 | `prompt_len` | inputs shifting to much longer / shorter prompts |
-| `step_count` | Qwen generating fewer or more reasoning steps |
-| `avg_step_len` | step verbosity changing (could affect classifier) |
-| `p_risky` | model output distribution collapsing — most important signal |
+| `token_count` | tokenizer producing significantly more/fewer tokens |
+| `p_risky` | classifier output distribution collapsing — most important signal |
 
 ---
 
 ## Research question
 
-> Do Shapley interaction values over CoT steps reveal a systematic pattern that explains the think-mode paradox — and does this pattern differ between prompt configurations where few-shot demonstrations help vs. hurt safety?
+> Do Shapley interaction values over tokens reveal systematic patterns in which words and phrases drive a safety classifier's verdict — and do those patterns differ between role-oriented and task-oriented jailbreak prompt types?
