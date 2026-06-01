@@ -4,15 +4,9 @@ SHAPIQ-based attribution for prompt-risk classification. The project builds a DV
 a binary classifier, and uses Shapley interaction values to explain which prompt tokens or spans drive risky/safe
 predictions.
 
-## Current focus
-
-- **A0 Data versioning:** complete. DVC is connected to Google Cloud Storage at `gs://prompt_classifier_mlops`.
-- **A1 Training:** next. Split `data/processed/prompt_risk_dataset.jsonl` into train/validation/test sets and train the
-  first prompt-risk classifier.
-
 ## Data
 
-The current dataset is stored as normalized JSONL files:
+The project uses normalized JSONL data for prompt-risk classification:
 
 ```text
 data/raw/
@@ -21,10 +15,13 @@ data/raw/
 └── wildguard_safe.jsonl
 
 data/processed/
-└── prompt_risk_dataset.jsonl
+├── prompt_risk_dataset.jsonl
+├── train.jsonl
+├── val.jsonl
+└── test.jsonl
 ```
 
-The raw and processed data directories are tracked with DVC:
+Data and model artifacts are versioned with DVC:
 
 ```bash
 uv run dvc pull
