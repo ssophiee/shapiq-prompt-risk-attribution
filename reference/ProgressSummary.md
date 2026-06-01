@@ -1,191 +1,270 @@
-# shapiq_attribution Work Plan
+# shapiq_attribution — Work Plan v2 (Equal MLOps Split)
 
 > Last updated: 2026-06-01
 
-## Project direction
+> **Current direction**: the project is no longer centered on CoT dataset generation.
+> The active pipeline trains a prompt-risk classifier and uses SHAPIQ attribution
+> over prompts or prompt tokens.
 
-The project is no longer centered on chain-of-thought generation. The active direction is prompt-risk classification and
-SHAPIQ attribution over prompts or prompt tokens. The project package is `shapiq_attribution` to avoid colliding with the
-external `shapiq` library.
+> **Split logic**: each person owns one complete pipeline slice end-to-end —
+> ML code *and* the MLOps infrastructure that serves it. Both people do DVC,
+> Hydra, Docker, W&B tracking, tests, and CI. Neither person is purely "ML"
+> or purely "MLOps".
 
-## Current status
+---
 
-| Area | Status | Notes |
+## Team Structure
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Person A — Stage 1 + 2          Person B — Stage 3 + Serve │
+│  Data pipeline (DVC)              Attribution (SHAPIQ)       │
+│  PyTorch training loop            FastAPI serving            │
+│  Hydra train config               Hydra attribution config   │
+│  W&B training tracking            W&B attribution tracking   │
+│  W&B Sweeps (hyperparam opt)      Evidently monitoring       │
+│  train.Dockerfile                 api.Dockerfile             │
+│  CI: training tests + coverage    CI: attribution/API tests  │
+└─────────────────────────────────────────────────────────────┘
+              shared: W&B project, pre-commit, GCP
+```
+
+---
+
+## Current Module Status
+
+| Module | Component | Status | Owner | Notes |
+|---|---|---|---|---|
+| **ML Core** | `attribution.py` | ✅ Done | B | legacy CoT value function remains; classifier value function is B's next integration point |
+| | `game.py` | ✅ Done | — | legacy CoT game remains; token/prompt game still to be adapted by B |
+| | `model.py` | ✅ Done | A | DistilBERT loaders, save helper, and `PromptRiskPredictor` handoff interface |
+| **Training** | `train.py` | ✅ Done | A | Hydra `@hydra.main`, DistilBERT PyTorch loop, W&B logging, model + metrics output |
+| **Data** | `data.py` | ✅ Done | A | AdvBench / HarmBench / WildGuard loaders, prompt-risk JSONL utilities, text dataset |
+| | DVC remote | ✅ Done | A | GCS remote `storage gs://prompt_classifier_mlops`; A1 artifacts pushed |
+| **Visualisation** | `visualize.py` | ✅ Done | — | unchanged |
+| **Pipeline** | `pipeline.py` | ✅ Done | B | add `--value-fn classifier\|llm` |
+| **Config** | `configs/train.yaml` | ✅ Done | A | data paths, DistilBERT config, hyperparams, W&B project, output paths |
+| | `configs/attribution.yaml` | ⬜ Not started | B | `prompt_type`, `few_shot_type`, `budget`, `value_fn` |
+| | `configs/sweep.yaml` | ⬜ Not started | A | W&B Sweep search space |
+| **Docker** | `train.Dockerfile` | ⬜ Not started | A | pytorch base, uv deps, `train.py` entrypoint |
+| | `api.Dockerfile` | ⬜ Not started | B | python:3.11-slim, API deps, port 8080 |
+| **Tests** | `test_data.py` | ✅ Done | A | data schema, normalization, JSONL round-trip |
+| | `test_model.py` | ✅ Done | A | `PromptRiskPredictor` callable and P(risky) output |
+| | `test_train.py` | ✅ Done | A | dataset/tokenization helper and metric tests |
+| | `test_split_data.py` | ✅ Done | A | deterministic split, label coverage, split validation |
+| | `test_attribution.py` | ⬜ Not started | B | fixtures, mock classifier, parametrized |
+| | `test_api.py` | ⬜ Not started | B | endpoint contract, mock model |
+| **CI** | GitHub Actions | 🔄 In progress | Both | split into `ci-train.yaml` + `ci-api.yaml` |
+| **API** | `api.py` | ⬜ Not started | B | FastAPI `POST /attribute` with lifespan |
+| **Cloud** | GCP training job | ⬜ Not started | A | GCP Vertex AI or Cloud Run Job |
+| | GCP API service | ⬜ Not started | B | GCP Cloud Run |
+| **Monitoring** | Evidently drift | ⬜ Not started | B | derived features: `prompt_len`, `step_count`, `avg_step_len`, `p_risky` vs. training baseline |
+
+### Legend
+| Icon | Meaning |
+|---|---|
+| ✅ Done | Completed and working |
+| 🔄 In progress | Work underway |
+| ⬜ Not started | Not yet begun |
+| 🚫 Blocked | Waiting on something else |
+
+---
+
+## Person A — Data + Training (Stage 1 → Stage 2)
+
+**Mission**: Own the data pipeline and the PyTorch training loop end-to-end,
+including DVC versioning, Hydra config, W&B tracking + sweeps, Dockerfile, and tests.
+Hand off a DVC-tracked classifier artifact that B can load.
+
+### A0. Data Pipeline
+
+| # | Task | MLOps angle | Status |
+|---|---|---|---|
+| A0.1 | Fix DVC tracking | removed stale `data/prompts.json.dvc`; track current assets instead | ✅ Done |
+| A0.2 | AdvBench / HarmBench / WildGuard loaders in `data.py` | outputs normalized `(prompt, label, source)` dataset | ✅ Done |
+| A0.3 | Processed prompt-risk dataset | `data/processed/prompt_risk_dataset.jsonl` tracked as individual DVC input | ✅ Done |
+| A0.4 | DVC remote on GCS | default remote `storage gs://prompt_classifier_mlops` | ✅ Done |
+| A0.5 | Resolve DVC output overlap | removed `data/processed.dvc`; split files are pipeline outputs | ✅ Done |
+| A0.6 | Push current data assets | `uv run dvc push` to GCS | ✅ Done |
+| A0.7 | CoT dataset generation | no longer active A pipeline direction | 🚫 Replaced |
+
+### A1. PyTorch Classifier Training
+
+| # | Task | MLOps angle | Status |
+|---|---|---|---|
+| A1.1 | `configs/train.yaml` | Hydra schema: data paths, model, hyperparams, W&B project name, output paths | ✅ Done |
+| A1.2 | `split_data.py` — Hydra split entrypoint | deterministic train/val/test split from `prompt_risk_dataset.jsonl` | ✅ Done |
+| A1.3 | DistilBERT binary classifier | `DistilBertForSequenceClassification`; input prompt text; output P(risky) | ✅ Done |
+| A1.4 | Training loop | AdamW + linear LR scheduler; per-epoch accuracy, F1, ROC-AUC logged to W&B | ✅ Done |
+| A1.5 | Save classifier artifact | checkpoint → `models/prompt_risk_distilbert/`; metrics → `reports/metrics.json` | ✅ Done |
+| A1.6 | DVC pipeline stages | `split_data` and `train` stages in `dvc.yaml`; lockfile in `dvc.lock` | ✅ Done |
+| A1.7 | Reproduce pipeline | `uv run dvc repro` runs split + training end-to-end | ✅ Done |
+| A1.8 | Push model artifacts | `uv run dvc push` pushed split outputs, model, and metrics to GCS | ✅ Done |
+| A1.9 | Improve evaluation quality | source-wise metrics, source-aware split, held-out benchmark, calibration check | ⬜ Not started |
+
+### A2. Hyperparameter Optimisation (W&B Sweeps)
+
+| # | Task | MLOps angle | Status |
+|---|---|---|---|
+| A2.1 | `configs/sweep.yaml` | define sweep: `lr`, `batch_size`, `max_length` search space; method: `bayes` | ⬜ Not started |
+| A2.2 | Sweep agent | `wandb agent` picks up config overrides; `train.py` reads them via Hydra | ⬜ Not started |
+| A2.3 | Best config baked back into `configs/train.yaml` | run final training with best params; save artifact | ⬜ Not started |
+
+### A3. Docker + CI (Training slice)
+
+| # | Task | MLOps angle | Status |
+|---|---|---|---|
+| A3.1 | `train.Dockerfile` | `FROM pytorch/pytorch`; install uv deps; entrypoint `uv run python -m shapiq_attribution.train` | ⬜ Not started |
+| A3.2 | Local smoke test | `docker build` + `docker run` → verify metrics file + W&B run created | ⬜ Not started |
+| A3.3 | `ci-train.yaml` GitHub Actions | on push: `pytest tests/test_data.py tests/test_model.py tests/test_train.py --cov`; build `train.Dockerfile` | ⬜ Not started |
+| A3.4 | GCP training job | deploy training container to GCP Vertex AI or Cloud Run Jobs | ⬜ Not started |
+
+### A4. Tests (training slice)
+
+| # | Task | Details | Status |
+|---|---|---|---|
+| A4.1 | `test_data.py` | schema, label checks, JSONL round-trip, dataset wrapper | ✅ Done |
+| A4.2 | `test_split_data.py` | deterministic split, preserved examples, stratified labels, invalid split sizes | ✅ Done |
+| A4.3 | `test_model.py` | `PromptRiskPredictor` returns P(risky) and is callable | ✅ Done |
+| A4.4 | `test_train.py` | tokenized dataset helper and metrics computation | ✅ Done |
+| A4.5 | Code coverage | `pytest --cov=src --cov-report=xml`; coverage report uploaded in CI | ⬜ Not started |
+
+---
+
+## Person B — Attribution + Serving (Stage 3 → API)
+
+**Mission**: Own the SHAPIQ attribution stage and the serving layer end-to-end,
+including Hydra config, W&B attribution tracking, FastAPI, Dockerfile, GCP Cloud Run,
+Evidently monitoring, and tests. Consume A's classifier artifact via DVC; keep `game.py` untouched.
+
+**Current handoff from A**: Person B can run `uv run dvc pull` and use
+`models/prompt_risk_distilbert/` through `PromptRiskPredictor`. The current prototype
+interface is `masked prompt -> PromptRiskPredictor -> P(risky)`.
+
+### B0. Attribution Integration
+
+| # | Task | MLOps angle | Status |
+|---|---|---|---|
+| B0.1 | `configs/attribution.yaml` | Hydra schema: `model_id`, `prompt_type`, `few_shot_type`, `budget`, `value_fn`, W&B project | ⬜ Not started |
+| B0.2 | `make_classifier_value_function` in `attribution.py` | for each coalition: masked prompt → `PromptRiskPredictor` → P(risky) | ⬜ Not started |
+| B0.3 | `--value-fn` flag in `pipeline.py` | wire Hydra config into pipeline; switch `llm` / `classifier` | ⬜ Not started |
+| B0.4 | Approximate shapiq for long chains | `shapiq.PermutationSamplingSV` when `n > 8`; controlled by `budget:` in config | ⬜ Not started |
+| B0.5 | W&B attribution logging | log per-run SVs, k-SII matrix, `prompt_type`, `few_shot_type` as W&B Table | ⬜ Not started |
+
+### B1. Experiments + Reporting
+
+| # | Task | Status |
 |---|---|---|
-| Package naming | Complete | Source package renamed to `src/shapiq_attribution/`. |
-| DVC remote | Complete | Default remote is `storage gs://prompt_classifier_mlops`. |
-| Data tracking | Complete | `data/raw.dvc` tracks raw snapshots; `data/processed/prompt_risk_dataset.jsonl.dvc` tracks the processed input dataset. |
-| Old prompt file | Complete | Removed stale `data/prompts.json.dvc`; the actual file was missing and not part of the active pipeline. |
-| A1 split | Complete | Hydra split step writes deterministic train/validation/test JSONL files. |
-| A1 training | Complete | DistilBERT prompt-risk classifier trains with PyTorch and logs to W&B. |
-| A1 DVC pipeline | Complete | `dvc.yaml` and `dvc.lock` reproduce split and training. |
-| A1 artifacts | Complete | Model and metrics are pushed to the GCS DVC remote. |
-| Evaluation quality | Needs follow-up | Current metrics are likely over-optimistic due to source/domain leakage in the random split. |
+| B1.1 | Experiment: jailbreak attribution on 10+ examples | ⬜ Not started |
+| B1.2 | Save SVs + k-SII to `reports/figures/` as PNG + JSON per run | ⬜ Not started |
+| B1.3 | `evaluate.py` — aggregate mean SV per step position across runs | ⬜ Not started |
 
-## Active data assets
+### B2. API + Docker + CI (serving slice)
 
-```text
-data/raw/
-├── advbench.jsonl
-├── harmbench.jsonl
-└── wildguard_safe.jsonl
+| # | Task | MLOps angle | Status |
+|---|---|---|---|
+| B2.1 | `api.py` skeleton | FastAPI `POST /attribute` with Pydantic input validation + lifespan startup (load classifier) | ⬜ Not started |
+| B2.2 | `api.Dockerfile` | `FROM python:3.11-slim`; install API deps; expose port 8080 | ⬜ Not started |
+| B2.3 | Local API smoke test | `docker build` + `docker run` + `curl POST /attribute` | ⬜ Not started |
+| B2.4 | `ci-api.yaml` GitHub Actions | on push: `pytest tests/test_attribution.py tests/test_api.py --cov`; build `api.Dockerfile` | ⬜ Not started |
+| B2.5 | GCP Cloud Run deployment | push image to Artifact Registry; deploy to Cloud Run; expose public endpoint | ⬜ Not started |
 
-data/processed/
-├── prompt_risk_dataset.jsonl
-├── train.jsonl
-├── val.jsonl
-└── test.jsonl
-```
+### B3. Monitoring (Evidently)
 
-The processed dataset combines risky prompts from AdvBench/HarmBench with safe prompts from WildGuard. The processed
-input dataset is tracked as an individual DVC file. The train/validation/test files are DVC pipeline outputs generated
-by the `split_data` stage.
+> Evidently operates on **derived numerical features**, not raw text.
+> Each API request is logged as a row of extracted features; Evidently then
+> compares the live feature distribution against the training baseline.
 
-## Current artifacts
+| # | Task | MLOps angle | Status |
+|---|---|---|---|
+| B3.1 | Define feature schema | extract per-request: `prompt_len`, `step_count`, `avg_step_len`, `p_risky`; log to `data/predictions.csv` | ⬜ Not started |
+| B3.2 | Baseline snapshot | run same extraction on training set; save to `data/baseline.csv`; DVC-track both | ⬜ Not started |
+| B3.3 | Evidently drift report | `DataDriftPreset` on numerical columns: `prompt_len`, `step_count`, `avg_step_len`; generate HTML report | ⬜ Not started |
+| B3.4 | P(risky) health check | `TestSuite`: assert mean P(risky) ∈ [0.2, 0.8]; alert if distribution collapses to all-0 or all-1 | ⬜ Not started |
+| B3.5 | Scheduled monitoring | GH Actions cron (or Cloud Scheduler) triggers Evidently report weekly on accumulated predictions | ⬜ Not started |
 
-```text
-configs/train.yaml
-dvc.yaml
-dvc.lock
-models/prompt_risk_distilbert/
-reports/metrics.json
-```
+### B4. Shared Infrastructure
 
-`models/prompt_risk_distilbert/` and `reports/metrics.json` are produced by the DVC training stage and pushed to Google
-Cloud Storage through DVC. They should not be committed directly to Git.
-
-## Milestones
-
-### A0. Data versioning
-
-| Task | Status | Notes |
+| # | Task | Status |
 |---|---|---|
-| Install GCS support for DVC | Complete | `dvc-gs` is present in `pyproject.toml`. |
-| Configure GCS remote | Complete | `.dvc/config` points to `gs://prompt_classifier_mlops`. |
-| Track current raw data | Complete | `data/raw.dvc`. |
-| Track processed input dataset | Complete | `data/processed/prompt_risk_dataset.jsonl.dvc`. |
-| Remove stale prompt reference | Complete | `data/prompts.json.dvc` removed. |
-| Resolve processed-output overlap | Complete | Removed `data/processed.dvc`; split files are now pipeline outputs. |
-| Verify DVC status | Complete | `uv run dvc status` reports data and pipelines up to date. |
+| B4.1 | `.env` / secrets — HF token + `WANDB_API_KEY` from env vars; never hardcoded | ⬜ Not started |
+| B4.2 | `pyproject.toml` — lock deps (`torch`, `transformers`, `shapiq`, `wandb`, `evidently`, `fastapi`) | 🔄 In progress |
+| B4.3 | Pre-commit — `ruff format`, `ruff check`, `mypy` in `.pre-commit-config.yaml` | ⬜ Not started |
 
-### A1. Split and training
+### B5. Tests (attribution + API slice)
 
-| Task | Status | Notes |
+| # | Task | Details | Status |
+|---|---|---|---|
+| B5.1 | `test_attribution.py` | `parse_cot_steps` on 3 fixtures; `make_classifier_value_function` with mock; `@pytest.mark.parametrize` over coalition sizes | ⬜ Not started |
+| B5.2 | `test_api.py` | endpoint contract with mock classifier; Pydantic validation errors return 422; response schema check | ⬜ Not started |
+| B5.3 | Code coverage | `pytest --cov=src --cov-report=xml`; report uploaded in `ci-api.yaml` | ⬜ Not started |
+
+---
+
+## DTU MLOps Course Coverage
+
+| Course Section | Person A | Person B | Status |
+|---|---|---|---|
+| S1: Dev environment | uv, venv, Python setup | — | ✅ Done |
+| S2: Version control + structure | git, code layout | — | ✅ Done |
+| S2: Data versioning (DVC) | prompt-risk data + classifier artifact; `dvc.yaml` pipeline | — | ✅ Done |
+| S2: CLI creation | — | `pipeline.py` CLI | ✅ Done |
+| S3: Reproducibility (Docker) | `train.Dockerfile` | `api.Dockerfile` | ⬜ Not started |
+| S3: Configuration (Hydra) | `configs/train.yaml`; sweep still pending | `configs/attribution.yaml` | 🔄 In progress |
+| S4: Debugging + profiling | PyTorch profiler on train loop | shapiq budget tradeoff | ⬜ Not started |
+| S4: Experiment tracking (W&B) | training metrics complete; sweeps pending | attribution run metadata | 🔄 In progress |
+| S5: Unit testing + coverage | `test_data`, `test_split_data`, `test_model`, `test_train`; coverage pending | `test_attribution`, `test_api`; `--cov` | 🔄 In progress |
+| S5: CI / GitHub Actions | `ci-train.yaml` | `ci-api.yaml` | 🔄 In progress |
+| S5: Pre-commit hooks | contributes | owns config | ⬜ Not started |
+| S6: Cloud (GCP) | Vertex AI / Cloud Run Jobs training | Cloud Run API service | ⬜ Not started |
+| S7: Deployment (FastAPI) | — | `api.py` + Pydantic + lifespan | ⬜ Not started |
+| S8: Monitoring (Evidently) | — | `DataDriftPreset` on derived numerical features (`prompt_len`, `step_count`, `avg_step_len`); `TestSuite` on P(risky) distribution | ⬜ Not started |
+| S10: Hyperparameter optimisation | W&B Sweeps (`configs/sweep.yaml`) | — | ⬜ Not started |
+| S10: Documentation (mkdocs) | — | already scaffolded; keep updated | 🔄 In progress |
+
+---
+
+## Task Dependencies
+
+```
+Person A                                      Person B
+────────                                      ────────
+A0.1–A0.6  DVC + prompt-risk data assets
+
+A1.1  configs/train.yaml
+A1.2  split_data.py
+A1.3–A1.5  DistilBERT train.py + W&B logging + artifact
+A1.6–A1.8  DVC repro + DVC push ────────────► B0.2  classifier value fn via PromptRiskPredictor
+A1.9  better evaluation quality
+
+A2.1–A2.3  W&B Sweeps → best config baked in
+
+A3.1  train.Dockerfile
+A3.3  ci-train.yaml ────────────────────────► B2.4  ci-api.yaml (both green = ship)
+A3.4  GCP training job ─────────────────────► B2.5  GCP Cloud Run (needs artifact in GCS)
+
+                                              B0.1  configs/attribution.yaml
+                                              B0.2–B0.5  attribution + W&B logging
+                                              B1.1–B1.3  experiments
+                                              B2.1  api.py
+                                              B2.2  api.Dockerfile
+                                              B3.1–B3.4  Evidently monitoring
+```
+
+| Dependency | Needs | Before |
 |---|---|---|
-| Add Hydra train config | Complete | `configs/train.yaml` controls data paths, model, training, output, and W&B. |
-| Add split function and CLI | Complete | `uv run python -m shapiq_attribution.split_data`. |
-| Write train/validation/test files | Complete | Outputs under `data/processed/`. |
-| Add DistilBERT training script | Complete | `uv run python -m shapiq_attribution.train`. |
-| Use PyTorch device config | Complete | `training.device` supports `auto`, `cpu`, `cuda`, and `mps`. |
-| Add W&B logging | Complete | Training and validation/test metrics are logged to W&B. |
-| Save model artifact | Complete | Output under `models/prompt_risk_distilbert/`. |
-| Save metrics | Complete | Output at `reports/metrics.json`. |
-| Add DVC pipeline stages | Complete | `split_data` and `train` stages in `dvc.yaml`. |
-| Push artifacts to GCS | Complete | `uv run dvc push` pushed current A1 artifacts. |
-| Add tests | Complete | Split determinism and training helper tests pass. |
+| B0.2 (classifier value fn) | A1.8 artifact in DVC/GCS | B1.1 experiments |
+| B2.5 (Cloud Run deploy) | A3.4 GCP training produces artifact in GCS | full pipeline |
+| B3 (Evidently) | B1.1 attribution runs generating predictions | B3.4 scheduled reports |
+| Both CI green | A4 + B5 tests passing | merge to main |
 
-## A1 command flow
+---
 
-```bash
-uv run python -m shapiq_attribution.split_data
-uv run python -m shapiq_attribution.train training.device=mps
-uv run dvc repro
-uv run dvc push
-```
+## Milestone Schedule
 
-For a smoke run without online W&B syncing:
-
-```bash
-uv run python -m shapiq_attribution.train training.device=mps wandb.mode=offline training.epochs=1 training.batch_size=4
-```
-
-## Evaluation caveat
-
-The current validation/test scores are perfect, but they should be treated as pipeline-validation evidence rather than
-final model-quality evidence. The likely issue is source/domain leakage: AdvBench and HarmBench currently provide risky
-examples, while WildGuard provides safe examples. A random stratified split can therefore let the model learn source or
-style cues instead of robust prompt-risk semantics.
-
-This does not block Person B from using the model for an attribution/API prototype, but it does mean the model is not
-yet scientifically reliable.
-
-## Person B handoff
-
-Person B can now run:
-
-```bash
-uv run dvc pull
-```
-
-and use:
-
-```text
-models/prompt_risk_distilbert/
-```
-
-as a prototype classifier artifact for API and SHAPIQ attribution integration. The expected model interface is:
-
-```text
-prompt or masked prompt -> PromptRiskPredictor -> P(risky)
-```
-
-Person B should use `PromptRiskPredictor` from `shapiq_attribution.model`:
-
-```python
-from shapiq_attribution.model import PromptRiskPredictor
-
-predictor = PromptRiskPredictor.from_pretrained(
-    "models/prompt_risk_distilbert",
-    max_length=128,
-    device="cpu",
-)
-
-p_risky = predictor("masked prompt text")
-```
-
-For SHAPIQ, the value function can delegate directly to the predictor:
-
-```python
-def value_function(masked_prompt: str) -> float:
-    return predictor(masked_prompt)
-```
-
-## Next steps
-
-### A1.9. Improve evaluation quality
-
-| Task | Status | Notes |
-|---|---|---|
-| Add source-wise metrics | Not started | Report metrics separately for AdvBench, HarmBench, and WildGuard. |
-| Add source-aware split option | Not started | Avoid evaluating on examples too similar to training examples by source. |
-| Add held-out benchmark evaluation | Not started | Example: train with AdvBench + WildGuard subset, evaluate on HarmBench. |
-| Add calibration check | Not started | Inspect overconfidence; consider expected calibration error or reliability curves. |
-
-### A2. Hyperparameter optimization
-
-| Task | Status | Notes |
-|---|---|---|
-| Add `configs/sweep.yaml` | Not started | Define W&B sweep over learning rate, batch size, max length, weight decay, and epochs. |
-| Make training sweep-compatible | Not started | Ensure Hydra overrides from W&B agent are cleanly supported. |
-| Run W&B sweep agent | Not started | Use sweep metric such as validation F1 or ROC-AUC. |
-| Select best config | Not started | Promote best hyperparameters back into `configs/train.yaml`. |
-| Train final best model | Not started | Re-run final model through DVC after selecting the best config. |
-
-### A3. Training infrastructure
-
-| Task | Status | Notes |
-|---|---|---|
-| Update `dockerfiles/train.dockerfile` | Not started | Entrypoint should run `python -m shapiq_attribution.train`. |
-| Local Docker smoke test | Not started | Build and run the training container with a short config override. |
-| Add training CI workflow | Not started | Run tests and optionally validate Docker build. |
-| Add cloud training job | Not started | Optional later step for longer training runs. |
-
-## Shared conventions
-
-- Use `uv` for dependency and command execution.
-- Use Hydra for configurable split and training steps.
-- Use W&B for experiment tracking.
-- Use DVC for data, split outputs, model artifacts, and metrics.
-- Keep source imports under `shapiq_attribution`.
-- Reserve `import shapiq` for the external SHAPIQ library.
-- Keep documentation updated when pipeline commands, data locations, or artifact locations change.
+| Week | Person A | Person B | Gate |
+|---|---|---|---|
+| W1 | A0.1–A0.6 DVC/GCS + prompt-risk data assets complete | B4.1–B4.3 secrets + deps + pre-commit; B0.1 `configs/attribution.yaml` skeleton | Prompt-risk dataset tracked in DVC; GCS remote works |
+| W2 | A1.1–A1.8 DistilBERT training + W&B + DVC artifact complete; A1.9 evaluation follow-up pending | B0.2–B0.5 attribution value fn + W&B; B2.1 `api.py` skeleton | Classifier trains + logs to W&B; Person B can pull artifact and prototype attribution |
+| W3 | A2.1–A2.3 W&B Sweeps; A3.1–A3.3 `train.Dockerfile` + `ci-train.yaml`; A4 tests + coverage | B2.2–B2.4 `api.Dockerfile` + `ci-api.yaml`; B5 tests + coverage; B3.1–B3.2 Evidently baseline | Both CI workflows green; coverage reports uploaded; Docker images build |
+| W4 | A3.4 GCP training job; coordinate B1 experiments | B2.5 GCP Cloud Run deploy; B3.3–B3.4 Evidently health + scheduled reports | Full 3-stage pipeline runs end-to-end on GCP |
