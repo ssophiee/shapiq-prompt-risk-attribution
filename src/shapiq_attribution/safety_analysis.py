@@ -167,6 +167,75 @@ class SafetyAnalysisGame(shapiq.Game):
 
 
 # ------------------------------------------------------------------
+# Word-level aggregation
+# ------------------------------------------------------------------
+
+def aggregate_to_words(
+    sv: shapiq.InteractionValues,
+    token_names: list[str],
+) -> tuple[shapiq.InteractionValues, list[str]]:
+    """Aggregate subword token Shapley values up to word level.
+
+    Llama 3's tokenizer marks word-initial tokens with a ``Ġ`` prefix (space
+    before the word). Tokens *without* that prefix are continuations of the
+    previous word (e.g. "vind", "ict", "ive" → "vindictive"). Their Shapley
+    values are summed to produce one value per word.
+
+    Args:
+        sv: Token-level ``InteractionValues`` (SV, order 1) from
+            ``run_safety_shapiq``.
+        token_names: ``game.token_names`` — list of raw token strings.
+
+    Returns:
+        Tuple of (word_sv, word_names) where ``word_sv`` is a new
+        ``InteractionValues`` with ``n_players = n_words`` and ``word_names``
+        is a list of plain word strings (``Ġ`` stripped).
+
+    Example::
+
+        sv, ksii = run_safety_shapiq(game, budget=64)
+        word_sv, word_names = aggregate_to_words(sv, game.token_names)
+        word_sv.plot_sentence(words=word_names)
+        word_sv.plot_force(feature_names=word_names)
+    """
+    # Build word groups: a new word starts at every token with a Ġ prefix
+    # (or at position 0 which never has a prefix)
+    word_groups: list[list[int]] = []
+    current: list[int] = [0]
+    for i in range(1, len(token_names)):
+        if token_names[i].startswith("Ġ"):
+            word_groups.append(current)
+            current = [i]
+        else:
+            current.append(i)
+    word_groups.append(current)
+
+    word_names = [
+        "".join(token_names[i].replace("Ġ", "") for i in grp)
+        for grp in word_groups
+    ]
+    n_words = len(word_groups)
+
+    # Build values array expected by InteractionValues for SV (min_order=0,
+    # max_order=1): position 0 = empty coalition, positions 1..n = singletons
+    word_values = np.zeros(n_words + 1)
+    word_values[0] = float(sv[()])
+    for w, grp in enumerate(word_groups):
+        word_values[w + 1] = sum(float(sv[(t,)]) for t in grp)
+
+    word_sv = shapiq.InteractionValues(
+        values=word_values,
+        index=sv.index,
+        max_order=1,
+        min_order=0,
+        n_players=n_words,
+        baseline_value=sv.baseline_value,
+        estimated=sv.estimated,
+    )
+    return word_sv, word_names
+
+
+# ------------------------------------------------------------------
 # Run helper
 # ------------------------------------------------------------------
 
