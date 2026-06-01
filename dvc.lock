@@ -1,0 +1,79 @@
+schema: '2.0'
+stages:
+  split_data:
+    cmd: uv run python -m shapiq_attribution.split_data
+    deps:
+    - path: configs/train.yaml
+      hash: md5
+      md5: adfedf2044d46b4ad529ab139beb82c7
+      size: 631
+    - path: data/processed/prompt_risk_dataset.jsonl
+      hash: md5
+      md5: 40f7f685464b0eb48a304797c8d6a794
+      size: 540827
+    - path: src/shapiq_attribution/data.py
+      hash: md5
+      md5: f64b833ad4fe2ffad182265d703579ea
+      size: 13089
+    - path: src/shapiq_attribution/split_data.py
+      hash: md5
+      md5: 99cba46d6ad0e2ff21c7c5d81ce5b138
+      size: 4030
+    outs:
+    - path: data/processed/test.jsonl
+      hash: md5
+      md5: dddcb6052973055ba845dc82247b39c3
+      size: 54985
+    - path: data/processed/train.jsonl
+      hash: md5
+      md5: 65e4168fe2782f29abf95a8d1cb23b87
+      size: 429054
+    - path: data/processed/val.jsonl
+      hash: md5
+      md5: 720d765ed83f6835de6a15ef1ba0a0eb
+      size: 56788
+  train:
+    cmd: uv run python -m shapiq_attribution.train
+    deps:
+    - path: configs/train.yaml
+      hash: md5
+      md5: adfedf2044d46b4ad529ab139beb82c7
+      size: 631
+    - path: data/processed/test.jsonl
+      hash: md5
+      md5: dddcb6052973055ba845dc82247b39c3
+      size: 54985
+    - path: data/processed/train.jsonl
+      hash: md5
+      md5: 65e4168fe2782f29abf95a8d1cb23b87
+      size: 429054
+    - path: data/processed/val.jsonl
+      hash: md5
+      md5: 720d765ed83f6835de6a15ef1ba0a0eb
+      size: 56788
+    - path: src/shapiq_attribution/data.py
+      hash: md5
+      md5: f64b833ad4fe2ffad182265d703579ea
+      size: 13089
+    - path: src/shapiq_attribution/evaluate.py
+      hash: md5
+      md5: f41fc28394c32a8edb3499eed20389dc
+      size: 2266
+    - path: src/shapiq_attribution/model.py
+      hash: md5
+      md5: b5442d523f25da43f2be427057b214ad
+      size: 1538
+    - path: src/shapiq_attribution/train.py
+      hash: md5
+      md5: 90206c3c1d39be8ebf31fa40f45454cd
+      size: 6204
+    outs:
+    - path: models/prompt_risk_distilbert
+      hash: md5
+      md5: 5ac34451ef14648f11ecf7865ca898e4.dir
+      size: 268545213
+      nfiles: 4
+    - path: reports/metrics.json
+      hash: md5
+      md5: 171b8b70b3d449b86ced2acda7cc9f98
+      size: 295
