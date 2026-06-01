@@ -46,7 +46,7 @@
 | **Config** | `configs/train.yaml` | ✅ Done | A | data paths, DistilBERT config, hyperparams, W&B project, output paths |
 | | `configs/attribution.yaml` | ⬜ Not started | B | `prompt_type`, `few_shot_type`, `budget`, `value_fn` |
 | | `configs/sweep.yaml` | ⬜ Not started | A | W&B Sweep search space |
-| **Docker** | `train.Dockerfile` | ⬜ Not started | A | pytorch base, uv deps, `train.py` entrypoint |
+| **Docker** | `train.Dockerfile` | ✅ Done | A | pytorch base, uv deps, `train.py` entrypoint |
 | | `api.Dockerfile` | ⬜ Not started | B | python:3.11-slim, API deps, port 8080 |
 | **Tests** | `test_data.py` | ✅ Done | A | data schema, normalization, JSONL round-trip |
 | | `test_model.py` | ✅ Done | A | `PromptRiskPredictor` callable and P(risky) output |
@@ -209,7 +209,7 @@ interface is `masked prompt -> PromptRiskPredictor -> P(risky)`.
 | S2: Version control + structure | git, code layout | — | ✅ Done |
 | S2: Data versioning (DVC) | prompt-risk data + classifier artifact; `dvc.yaml` pipeline | — | ✅ Done |
 | S2: CLI creation | — | `pipeline.py` CLI | ✅ Done |
-| S3: Reproducibility (Docker) | `train.Dockerfile` | `api.Dockerfile` | ⬜ Not started |
+| S3: Reproducibility (Docker) | `train.Dockerfile` | `api.Dockerfile` | 🔄 In progress |
 | S3: Configuration (Hydra) | `configs/train.yaml`; sweep still pending | `configs/attribution.yaml` | 🔄 In progress |
 | S4: Debugging + profiling | PyTorch profiler on train loop | shapiq budget tradeoff | ⬜ Not started |
 | S4: Experiment tracking (W&B) | training metrics complete; sweeps pending | attribution run metadata | 🔄 In progress |
