@@ -170,6 +170,7 @@ class SafetyAnalysisGame(shapiq.Game):
 # Run helper
 # ------------------------------------------------------------------
 
+
 def run_safety_shapiq(game: SafetyAnalysisGame, budget: int = 256) -> tuple:
     """Approximate SV and k-SII interactions for a SafetyAnalysisGame.
 
@@ -182,15 +183,14 @@ def run_safety_shapiq(game: SafetyAnalysisGame, budget: int = 256) -> tuple:
     """
     n = game.n_players
     sv = shapiq.KernelSHAP(n=n, random_state=42).approximate(budget=budget, game=game)
-    ksii = shapiq.KernelSHAPIQ(
-        n=n, index="k-SII", max_order=2, random_state=42
-    ).approximate(budget=budget, game=game)
+    ksii = shapiq.KernelSHAPIQ(n=n, index="k-SII", max_order=2, random_state=42).approximate(budget=budget, game=game)
     return sv, ksii
 
 
 # ------------------------------------------------------------------
 # Loader
 # ------------------------------------------------------------------
+
 
 def _load_model(model_name: str, backend: str) -> tuple:
     """Load model and tokenizer from HuggingFace.
@@ -210,9 +210,7 @@ def _load_model(model_name: str, backend: str) -> tuple:
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if backend == "llama_guard":
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name, dtype=torch.float16
-        )
+        model = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.float16)
     else:
         model = AutoModelForSequenceClassification.from_pretrained(model_name)
     model.eval()

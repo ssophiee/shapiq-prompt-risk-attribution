@@ -164,11 +164,7 @@ def run_attribution_natural(
 
     n = len(cot_steps)
     shapley_values = [float(sv.values[i + 1]) for i in range(n)]
-    interactions = {
-        f"{t[0]},{t[1]}": float(v)
-        for t, v in zip(ksii.interactions, ksii.values)
-        if len(t) == 2
-    }
+    interactions = {f"{t[0]},{t[1]}": float(v) for t, v in zip(ksii.interactions, ksii.values) if len(t) == 2}
 
     return {
         "cot_steps": cot_steps,
@@ -276,11 +272,7 @@ def run_attribution_qwen3(
 
     n = len(cot_steps)
     shapley_values = [float(sv.values[i + 1]) for i in range(n)]
-    interactions = {
-        f"{t[0]},{t[1]}": float(v)
-        for t, v in zip(ksii.interactions, ksii.values)
-        if len(t) == 2
-    }
+    interactions = {f"{t[0]},{t[1]}": float(v) for t, v in zip(ksii.interactions, ksii.values) if len(t) == 2}
 
     return {
         "cot_steps": cot_steps,

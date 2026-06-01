@@ -9,6 +9,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TypedDict
 
+import torch
 from datasets import load_dataset
 from torch.utils.data import Dataset
 
@@ -343,5 +344,38 @@ class PromptRiskDataset(Dataset):
         return self.examples[index]
 
 
-if __name__ == "__main__":
-    cli()
+class PromptRiskTextDataset(Dataset):
+    """Tokenized prompt-risk dataset for transformer training."""
+
+    def __init__(self, examples: list[PromptRiskExample], tokenizer: Any, max_length: int) -> None:
+        """Initialize the dataset.
+
+        Args:
+            examples: Prompt-risk examples.
+            tokenizer: Hugging Face tokenizer.
+            max_length: Maximum tokenized sequence length.
+        """
+        self.examples = examples
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self) -> int:
+        """Return the number of examples."""
+        return len(self.examples)
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        """Return one tokenized training example."""
+        example = self.examples[index]
+        encoded = self.tokenizer(
+            example["prompt"],
+            truncation=True,
+            padding="max_length",
+            max_length=self.max_length,
+            return_tensors="pt",
+        )
+        item = {key: value.squeeze(0) for key, value in encoded.items()}
+        item["labels"] = torch.tensor(example["label"], dtype=torch.long)
+        return item
+
+    if __name__ == "__main__":
+        cli()

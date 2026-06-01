@@ -41,7 +41,7 @@ def generate_cot(question: str, system: str, few_shot: str, model, tokenizer) ->
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
         )
-    return tokenizer.decode(output_ids[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+    return tokenizer.decode(output_ids[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
 
 
 def run_attribution(question: str, system: str, few_shot: str, model, tokenizer) -> dict:
@@ -60,9 +60,7 @@ def run_attribution(question: str, system: str, few_shot: str, model, tokenizer)
     n = len(cot_steps)
     shapley_values: list[float] = [float(sv.values[i + 1]) for i in range(n)]
     interactions: dict[str, float] = {
-        f"{t[0]},{t[1]}": float(v)
-        for t, v in zip(ksii.interactions, ksii.values)
-        if len(t) == 2
+        f"{t[0]},{t[1]}": float(v) for t, v in zip(ksii.interactions, ksii.values) if len(t) == 2
     }
 
     return {
@@ -91,4 +89,5 @@ def main(hf_token: str, model_id: str = "Qwen/Qwen2.5-3B-Instruct", example_inde
 
 if __name__ == "__main__":
     import typer
+
     typer.run(main)

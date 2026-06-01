@@ -4,7 +4,7 @@ import numpy as np
 
 def plot_results(cot_steps: list[str], sv, ksii, title: str = "CoT Step Attribution") -> None:
     n = len(cot_steps)
-    sv_vals = sv.values[1: n + 1][::-1]
+    sv_vals = sv.values[1 : n + 1][::-1]
     step_labels = [f"Step {i + 1}" for i in range(n)][::-1]
 
     imat = np.zeros((n, n))

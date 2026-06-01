@@ -8,3 +8,7 @@ __pycache__/
 **/__pycache__/
 data/raw/*.jsonl
 data/processed/*.jsonl
+!data/raw/*.jsonl.dvc
+!data/processed/*.jsonl.dvc
+outputs/
+wandb/

@@ -1,0 +1,28 @@
+stages:
+  split_data:
+    cmd: uv run python -m shapiq_attribution.split_data
+    deps:
+      - configs/train.yaml
+      - data/processed/prompt_risk_dataset.jsonl
+      - src/shapiq_attribution/data.py
+      - src/shapiq_attribution/split_data.py
+    outs:
+      - data/processed/train.jsonl
+      - data/processed/val.jsonl
+      - data/processed/test.jsonl
+
+  train:
+    cmd: uv run python -m shapiq_attribution.train
+    deps:
+      - configs/train.yaml
+      - data/processed/train.jsonl
+      - data/processed/val.jsonl
+      - data/processed/test.jsonl
+      - src/shapiq_attribution/data.py
+      - src/shapiq_attribution/evaluate.py
+      - src/shapiq_attribution/model.py
+      - src/shapiq_attribution/train.py
+    outs:
+      - models/prompt_risk_distilbert
+    metrics:
+      - reports/metrics.json

@@ -1,0 +1,33 @@
+data:
+  input_path: data/processed/prompt_risk_dataset.jsonl
+  train_path: data/processed/train.jsonl
+  val_path: data/processed/val.jsonl
+  test_path: data/processed/test.jsonl
+  train_size: 0.8
+  val_size: 0.1
+  test_size: 0.1
+  seed: 12
+  stratify: true
+
+model:
+  name: distilbert-base-uncased
+  num_labels: 2
+  max_length: 128
+
+training:
+  epochs: 3
+  batch_size: 16
+  learning_rate: 2e-5
+  weight_decay: 0.01
+  seed: 12
+  device: auto
+
+output:
+  model_dir: models/prompt_risk_distilbert
+  metrics_path: reports/metrics.json
+
+wandb:
+  project: shapiq-attribution
+  entity: null
+  mode: online
+  run_name: distilbert-prompt-risk

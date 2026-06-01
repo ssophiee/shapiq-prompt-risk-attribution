@@ -41,10 +41,7 @@ def parse_cot_steps(generated_text: str) -> tuple[list[str], str]:
         steps:  list of reasoning step strings (Answer line excluded)
         target: the answer string (empty string if not found)
     """
-    all_steps = [
-        s for s in re.findall(r"Step \d+:.*", generated_text)
-        if not re.match(r"Step \d+:\s*\.{0,3}\s*$", s)
-    ]
+    all_steps = [s for s in re.findall(r"Step \d+:.*", generated_text) if not re.match(r"Step \d+:\s*\.{0,3}\s*$", s)]
     steps = [s for s in all_steps if "Answer:" not in s]
     answer_match = re.search(r"Answer:(.*)", generated_text)
     target = answer_match.group(1).strip() if answer_match else ""

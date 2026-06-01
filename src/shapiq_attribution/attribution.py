@@ -33,7 +33,7 @@ def compute_answer_logprob(prompt: str, target: str, model, tokenizer) -> float:
     logits = model(full_ids).logits
     log_probs = torch.log_softmax(logits[0], dim=-1)
     answer_ids = full_ids[0, prompt_len:]
-    token_lp = log_probs[prompt_len - 1: prompt_len - 1 + len(answer_ids)]
+    token_lp = log_probs[prompt_len - 1 : prompt_len - 1 + len(answer_ids)]
     token_lp = token_lp[torch.arange(len(answer_ids)), answer_ids]
     return token_lp.mean().item()
 
@@ -48,6 +48,7 @@ def make_value_function(
     tokenizer,
 ):
     """Returns a coalition value function for use with CoTGame."""
+
     def value_fn(coalitions: np.ndarray) -> np.ndarray:
         scores = []
         for coalition in coalitions:
@@ -55,4 +56,5 @@ def make_value_function(
             prompt = build_prompt(question, few_shot, system, present, tokenizer)
             scores.append(compute_answer_logprob(prompt, target_answer, model, tokenizer))
         return np.array(scores)
+
     return value_fn
