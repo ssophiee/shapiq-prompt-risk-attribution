@@ -1,12 +1,9 @@
-Generating the docs
-----------
+# Documentation
 
-Use [mkdocs](http://www.mkdocs.org/) structure to update the documentation.
-
-Build locally with:
-
-    mkdocs build
+MkDocs documentation for `shapiq_attribution`.
 
 Serve locally with:
 
-    mkdocs serve
+```bash
+uv run mkdocs serve --config-file docs/mkdocs.yaml
+```

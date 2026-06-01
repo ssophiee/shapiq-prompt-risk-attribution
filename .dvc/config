@@ -2,4 +2,4 @@
     remote = storage
     autostage = true
 ['remote "storage"']
-    url = gdrive://1hd_lJft6LP1da_0PO73WnuSdkF0rGcaT
+    url = gs://prompt_classifier_mlops

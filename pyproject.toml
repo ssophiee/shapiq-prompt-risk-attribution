@@ -3,9 +3,9 @@ requires = ["uv_build>=0.9.22,<0.10.0"]
 build-backend = "uv_build"
 
 [project]
-name = "shapiq_cot"
+name = "shapiq_attribution"
 version = "0.0.1"
-description = "Shapley interaction attribution for chain-of-thought reasoning steps in LLMs"
+description = "SHAPIQ-based attribution for prompt-risk classification"
 authors = [
   { name = "MLOps_team", email = "your@email.com" },
 ]
@@ -21,6 +21,7 @@ dependencies = [
     "datasets>=4.8.5",
     "dvc>=3.67.1",
     "dvc-gdrive>=3.0.1",
+    "dvc-gs>=3.0.2",
     "fastapi==0.115.6",
     "numpy>=2.4.6",
     "torch==2.6.0",

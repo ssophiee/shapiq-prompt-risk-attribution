@@ -3,7 +3,7 @@ import os
 from invoke import Context, task
 
 WINDOWS = os.name == "nt"
-PROJECT_NAME = "shapiq_cot"
+PROJECT_NAME = "shapiq_attribution"
 PYTHON_VERSION = "3.13"
 
 

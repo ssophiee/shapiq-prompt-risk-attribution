@@ -8,6 +8,11 @@
   * To run Python scripts, use `uv run <script-name>.py`.
   * To run other commands related to Python, prefix them with `uv run `, e.g., `uv run <command>`.
 * The project uses `pytest` for testing. To run tests, use `uv run pytest tests/`.
+* The project uses `dvc` for data and model artifact versioning:
+  * To pull tracked artifacts, use `uv run dvc pull`.
+  * To check artifact status, use `uv run dvc status`.
+  * To push artifacts to Google Cloud Storage, use `uv run dvc push`.
+  * The default DVC remote is `storage` at `gs://prompt_classifier_mlops`.
 * The project uses `ruff` for linting and formatting:
     * To format code, use `uv run ruff format .`.
     * To lint code, use `uv run ruff check . --fix`.

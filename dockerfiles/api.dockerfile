@@ -11,4 +11,4 @@ COPY LICENSE LICENSE
 
 RUN uv sync --frozen
 
-ENTRYPOINT ["uv", "run", "uvicorn", "src.shapiq_cot.api:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["uv", "run", "uvicorn", "src.shapiq_attribution.api:app", "--host", "0.0.0.0", "--port", "8000"]
