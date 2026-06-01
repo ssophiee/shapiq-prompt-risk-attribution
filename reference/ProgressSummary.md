@@ -114,9 +114,9 @@ Hand off a DVC-tracked classifier artifact that B can load.
 
 | # | Task | MLOps angle | Status |
 |---|---|---|---|
-| A3.1 | `train.Dockerfile` | `FROM pytorch/pytorch`; install uv deps; entrypoint `uv run python -m shapiq_attribution.train` | ⬜ Not started |
-| A3.2 | Local smoke test | `docker build` + `docker run` → verify metrics file + W&B run created | ⬜ Not started |
-| A3.3 | `ci-train.yaml` GitHub Actions | on push: `pytest tests/test_data.py tests/test_model.py tests/test_train.py --cov`; build `train.Dockerfile` | ⬜ Not started |
+| A3.1 | `train.Dockerfile` | uv-based training image with entrypoint `uv run python -m shapiq_attribution.train` | ✅ Done |
+| A3.2 | Local smoke test | `docker build` + `docker run` verified metrics file + offline W&B run creation | ✅ Done |
+| A3.3 | `ci-train.yaml` GitHub Actions | on push: run training-slice tests and build `train.Dockerfile` | ✅ Done |
 | A3.4 | GCP training job | deploy training container to GCP Vertex AI or Cloud Run Jobs | ⬜ Not started |
 
 ### A4. Tests (training slice)

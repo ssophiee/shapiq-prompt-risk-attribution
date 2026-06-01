@@ -1,14 +1,19 @@
-FROM ghcr.io/astral-sh/uv:python3.13-alpine AS base
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS base
 
-COPY uv.lock uv.lock
-COPY pyproject.toml pyproject.toml
+WORKDIR /app
+
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+ENV WANDB_MODE=offline
+
+COPY pyproject.toml uv.lock README.md LICENSE ./
 
 RUN uv sync --frozen --no-install-project
 
+COPY configs configs/
 COPY src src/
-COPY README.md README.md
-COPY LICENSE LICENSE
+COPY dvc.yaml dvc.lock ./
 
 RUN uv sync --frozen
 
-ENTRYPOINT ["uv", "run", "src/shapiq_attribution/pipeline.py"]
+ENTRYPOINT ["uv", "run", "python", "-m", "shapiq_attribution.train"]

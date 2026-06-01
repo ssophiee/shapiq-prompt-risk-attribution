@@ -10,14 +10,22 @@ PYTHON_VERSION = "3.13"
 # Project commands
 @task
 def preprocess_data(ctx: Context) -> None:
-    """Preprocess data."""
-    ctx.run(f"uv run src/{PROJECT_NAME}/data.py data/raw data/processed", echo=True, pty=not WINDOWS)
+    """Build the processed prompt-risk dataset from raw snapshots."""
+    ctx.run(
+        (
+            "uv run python -m shapiq_attribution.data build-dataset "
+            "--raw-dir data/raw "
+            "--output-path data/processed/prompt_risk_dataset.jsonl"
+        ),
+        echo=True,
+        pty=not WINDOWS,
+    )
 
 
 @task
 def train(ctx: Context) -> None:
     """Train model."""
-    ctx.run(f"uv run src/{PROJECT_NAME}/train.py", echo=True, pty=not WINDOWS)
+    ctx.run("uv run python -m shapiq_attribution.train", echo=True, pty=not WINDOWS)
 
 
 @task
@@ -25,6 +33,15 @@ def test(ctx: Context) -> None:
     """Run tests."""
     ctx.run("uv run coverage run -m pytest tests/", echo=True, pty=not WINDOWS)
     ctx.run("uv run coverage report -m -i", echo=True, pty=not WINDOWS)
+
+@task
+def docker_build_train(ctx: Context, progress: str = "plain") -> None:
+    """Build the training Docker image."""
+    ctx.run(
+        f"docker build -t shapiq-train:latest . -f dockerfiles/train.dockerfile --progress={progress}",
+        echo=True,
+        pty=not WINDOWS,
+    )
 
 
 @task

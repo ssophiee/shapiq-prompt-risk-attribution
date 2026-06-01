@@ -1,0 +1,14 @@
+.git
+.dvc/cache
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+.mypy_cache
+wandb
+outputs
+multirun
+models
+reports
+data
+docs/build
