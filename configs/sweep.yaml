@@ -1,0 +1,36 @@
+program: src/shapiq_attribution/train.py
+name: distilbert-prompt-risk-sweep
+project: shapiq-attribution
+method: bayes
+
+metric:
+  name: val/roc_auc
+  goal: maximize
+
+command:
+  - uv
+  - run
+  - python
+  - -m
+  - shapiq_attribution.train
+  - ${args_no_hyphens}
+
+parameters:
+  training.learning_rate:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.0001
+
+  training.batch_size:
+    values: [8, 16, 32]
+
+  training.weight_decay:
+    values: [0.0, 0.01, 0.05]
+
+  model.max_length:
+    values: [64, 128, 256]
+
+  training.epochs:
+    values: [2, 3]
+
+run_cap: 10

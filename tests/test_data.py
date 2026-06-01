@@ -98,3 +98,31 @@ def test_prompt_risk_dataset_returns_examples(tmp_path) -> None:
 
     assert len(dataset) == 1
     assert dataset[0] == examples[0]
+
+def test_build_prompt_risk_dataset_combines_raw_snapshots(tmp_path) -> None:
+    """Test building the processed dataset from raw snapshots."""
+    from shapiq_attribution.data import build_prompt_risk_dataset
+
+    raw_dir = tmp_path / "raw"
+    output_path = tmp_path / "processed" / "prompt_risk_dataset.jsonl"
+
+    write_prompt_risk_jsonl(
+        [make_prompt_risk_example(prompt="adv risky", label=1, source="advbench")],
+        raw_dir / "advbench.jsonl",
+    )
+    write_prompt_risk_jsonl(
+        [make_prompt_risk_example(prompt="harm risky", label=1, source="harmbench")],
+        raw_dir / "harmbench.jsonl",
+    )
+    write_prompt_risk_jsonl(
+        [make_prompt_risk_example(prompt="wild safe", label=0, source="wildguard")],
+        raw_dir / "wildguard_safe.jsonl",
+    )
+
+    build_prompt_risk_dataset(raw_dir=raw_dir, output_path=output_path)
+
+    assert load_prompt_risk_jsonl(output_path) == [
+        {"prompt": "adv risky", "label": 1, "source": "advbench"},
+        {"prompt": "harm risky", "label": 1, "source": "harmbench"},
+        {"prompt": "wild safe", "label": 0, "source": "wildguard"},
+    ]

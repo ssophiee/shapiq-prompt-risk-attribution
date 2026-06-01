@@ -106,9 +106,9 @@ Hand off a DVC-tracked classifier artifact that B can load.
 
 | # | Task | MLOps angle | Status |
 |---|---|---|---|
-| A2.1 | `configs/sweep.yaml` | define sweep: `lr`, `batch_size`, `max_length` search space; method: `bayes` | ⬜ Not started |
-| A2.2 | Sweep agent | `wandb agent` picks up config overrides; `train.py` reads them via Hydra | ⬜ Not started |
-| A2.3 | Best config baked back into `configs/train.yaml` | run final training with best params; save artifact | ⬜ Not started |
+| A2.1 | `configs/sweep.yaml` | define sweep: `lr`, `batch_size`, `max_length` search space; method: `bayes` | ✅ Done |
+| A2.2 | Sweep agent | `wandb agent` picks up config overrides; `train.py` reads them via Hydra | ✅ Done |
+| A2.3 | Best config baked back into `configs/train.yaml` | deferred until the dataset/evaluation bias in A1.9 is resolved | 🚫 Deferred |
 
 ### A3. Docker + CI (Training slice)
 
@@ -219,7 +219,7 @@ interface is `masked prompt -> PromptRiskPredictor -> P(risky)`.
 | S6: Cloud (GCP) | Vertex AI / Cloud Run Jobs training | Cloud Run API service | ⬜ Not started |
 | S7: Deployment (FastAPI) | — | `api.py` + Pydantic + lifespan | ⬜ Not started |
 | S8: Monitoring (Evidently) | — | `DataDriftPreset` on derived numerical features (`prompt_len`, `step_count`, `avg_step_len`); `TestSuite` on P(risky) distribution | ⬜ Not started |
-| S10: Hyperparameter optimisation | W&B Sweeps (`configs/sweep.yaml`) | — | ⬜ Not started |
+| S10: Hyperparameter optimisation | W&B Sweeps (`configs/sweep.yaml`) infrastructure complete; final best-config bake-in deferred until A1.9 | — | 🔄 In progress |
 | S10: Documentation (mkdocs) | — | already scaffolded; keep updated | 🔄 In progress |
 
 ---
@@ -237,7 +237,7 @@ A1.3–A1.5  DistilBERT train.py + W&B logging + artifact
 A1.6–A1.8  DVC repro + DVC push ────────────► B0.2  classifier value fn via PromptRiskPredictor
 A1.9  better evaluation quality
 
-A2.1–A2.3  W&B Sweeps → best config baked in
+A2.1–A2.2  W&B Sweeps infrastructure complete; A2.3 deferred until A1.9 dataset/evaluation follow-up
 
 A3.1  train.Dockerfile
 A3.3  ci-train.yaml ────────────────────────► B2.4  ci-api.yaml (both green = ship)
@@ -266,5 +266,5 @@ A3.4  GCP training job ───────────────────
 |---|---|---|---|
 | W1 | A0.1–A0.6 DVC/GCS + prompt-risk data assets complete | B4.1–B4.3 secrets + deps + pre-commit; B0.1 `configs/attribution.yaml` skeleton | Prompt-risk dataset tracked in DVC; GCS remote works |
 | W2 | A1.1–A1.8 DistilBERT training + W&B + DVC artifact complete; A1.9 evaluation follow-up pending | B0.2–B0.5 attribution value fn + W&B; B2.1 `api.py` skeleton | Classifier trains + logs to W&B; Person B can pull artifact and prototype attribution |
-| W3 | A2.1–A2.3 W&B Sweeps; A3.1–A3.3 `train.Dockerfile` + `ci-train.yaml`; A4 tests + coverage | B2.2–B2.4 `api.Dockerfile` + `ci-api.yaml`; B5 tests + coverage; B3.1–B3.2 Evidently baseline | Both CI workflows green; coverage reports uploaded; Docker images build |
+| W3 | A2.1–A2.2 W&B Sweeps infrastructure complete; A2.3 deferred until A1.9; A3.1–A3.3 `train.Dockerfile` + `ci-train.yaml`; A4 tests + coverage | B2.2–B2.4 `api.Dockerfile` + `ci-api.yaml`; B5 tests + coverage; B3.1–B3.2 Evidently baseline | Both CI workflows green; coverage reports uploaded; Docker images build |
 | W4 | A3.4 GCP training job; coordinate B1 experiments | B2.5 GCP Cloud Run deploy; B3.3–B3.4 Evidently health + scheduled reports | Full 3-stage pipeline runs end-to-end on GCP |

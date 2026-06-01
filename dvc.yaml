@@ -1,4 +1,11 @@
 stages:
+  prepare_dataset:
+    cmd: uv run python -m shapiq_attribution.data build-dataset --raw-dir data/raw --output-path data/processed/prompt_risk_dataset.jsonl
+    deps:
+      - data/raw
+      - src/shapiq_attribution/data.py
+    outs:
+      - data/processed/prompt_risk_dataset.jsonl
   split_data:
     cmd: uv run python -m shapiq_attribution.split_data
     deps:

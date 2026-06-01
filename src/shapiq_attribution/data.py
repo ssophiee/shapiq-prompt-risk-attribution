@@ -300,29 +300,43 @@ def main(
     for source, path in written_paths.items():
         print(f"{source}: {path}")
 
+def build_prompt_risk_dataset(raw_dir: str | Path, output_path: str | Path) -> None:
+    """Build the processed prompt-risk dataset from local raw JSONL snapshots.
+
+    Args:
+        raw_dir: Directory containing raw normalized JSONL snapshots.
+        output_path: Output path for the processed prompt-risk dataset.
+    """
+    raw_path = Path(raw_dir)
+    examples = []
+    for filename in ("advbench.jsonl", "harmbench.jsonl", "wildguard_safe.jsonl"):
+        examples.extend(load_prompt_risk_jsonl(raw_path / filename))
+    write_prompt_risk_jsonl(examples, output_path)
+
 
 def cli() -> None:
-    """Parse command-line arguments and create raw JSONL snapshots."""
-    parser = argparse.ArgumentParser(description="Create local raw JSONL snapshots for DVC tracking.")
-    parser.add_argument("--output-dir", default="data/raw", help="Directory for JSONL snapshots.")
-    parser.add_argument(
-        "--hf-token",
-        default=None,
-        help="Optional Hugging Face token for gated dataset access. Defaults to the HF_TOKEN environment variable.",
-    )
-    parser.add_argument(
-        "--max-samples-per-source",
-        type=int,
-        default=None,
-        help="Optional maximum number of examples per source.",
-    )
-    args = parser.parse_args()
-    main(
-        output_dir=args.output_dir,
-        hf_token=args.hf_token,
-        max_samples_per_source=args.max_samples_per_source,
-    )
+    """Parse command-line arguments for data preparation tasks."""
+    parser = argparse.ArgumentParser(description="Prompt-risk data utilities.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
+    snapshots_parser = subparsers.add_parser("raw-snapshots", help="Create local raw JSONL snapshots.")
+    snapshots_parser.add_argument("--output-dir", default="data/raw")
+    snapshots_parser.add_argument("--hf-token", default=None)
+    snapshots_parser.add_argument("--max-samples-per-source", type=int, default=None)
+
+    build_parser = subparsers.add_parser("build-dataset", help="Build processed dataset from raw snapshots.")
+    build_parser.add_argument("--raw-dir", default="data/raw")
+    build_parser.add_argument("--output-path", default="data/processed/prompt_risk_dataset.jsonl")
+
+    args = parser.parse_args()
+    if args.command == "raw-snapshots":
+        main(
+            output_dir=args.output_dir,
+            hf_token=args.hf_token,
+            max_samples_per_source=args.max_samples_per_source,
+        )
+    elif args.command == "build-dataset":
+        build_prompt_risk_dataset(raw_dir=args.raw_dir, output_path=args.output_path)
 
 class PromptRiskDataset(Dataset):
     """Torch dataset backed by a normalized prompt-risk JSONL file."""
@@ -377,5 +391,5 @@ class PromptRiskTextDataset(Dataset):
         item["labels"] = torch.tensor(example["label"], dtype=torch.long)
         return item
 
-    if __name__ == "__main__":
-        cli()
+if __name__ == "__main__":
+    cli()
