@@ -45,6 +45,16 @@ def docker_build_train(ctx: Context, progress: str = "plain") -> None:
 
 
 @task
+def docker_build_train_gpu(ctx: Context, progress: str = "plain") -> None:
+    """Build the GPU training Docker image."""
+    ctx.run(
+        f"docker build -t shapiq-train-gpu:latest . -f dockerfiles/train.gpu.dockerfile --progress={progress}",
+        echo=True,
+        pty=not WINDOWS,
+    )
+
+
+@task
 def docker_build(ctx: Context, progress: str = "plain") -> None:
     """Build docker images."""
     ctx.run(

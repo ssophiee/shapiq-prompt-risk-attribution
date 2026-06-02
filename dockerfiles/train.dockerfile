@@ -8,12 +8,12 @@ ENV WANDB_MODE=offline
 
 COPY pyproject.toml uv.lock README.md LICENSE ./
 
-RUN uv sync --frozen --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY configs configs/
 COPY src src/
 COPY dvc.yaml dvc.lock ./
 
-RUN uv sync --frozen
+RUN uv sync --frozen --no-dev
 
 ENTRYPOINT ["uv", "run", "python", "-m", "shapiq_attribution.train"]
