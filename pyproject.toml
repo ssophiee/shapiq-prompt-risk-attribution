@@ -47,6 +47,9 @@ dev = [
 
 
 
+[tool.uv]
+env-file = ".env"
+
 [tool.ruff]
 line-length = 120
 lint.select = ["I", "E", "F", "B", "UP"]

@@ -39,6 +39,8 @@ import numpy as np
 import shapiq
 import torch
 
+from .model import PromptRiskPredictor
+
 
 class SafetyAnalysisGame(shapiq.Game):
     """Token-level safety classification game.
@@ -62,13 +64,20 @@ class SafetyAnalysisGame(shapiq.Game):
         backend: str = "llama_guard",
         normalize: bool = True,
     ) -> None:
-        if model is None or tokenizer is None:
-            model, tokenizer = _load_model(model_name, backend)
+        self._predictor: PromptRiskPredictor | None = None
+        if isinstance(model, PromptRiskPredictor):
+            self._predictor = model
+            tokenizer = model.tokenizer
+            self._device = model.device
+            model = model.model
+        else:
+            if model is None or tokenizer is None:
+                model, tokenizer = _load_model(model_name, backend)
+            self._device = next(model.parameters()).device
 
         self._model = model
         self._tokenizer = tokenizer
         self._backend = backend
-        self._device = next(model.parameters()).device
 
         # Tokenize and strip leading/trailing special tokens ([CLS]/[BOS], [SEP]/[EOS])
         ids = tokenizer(input_text)["input_ids"]
@@ -154,16 +163,8 @@ class SafetyAnalysisGame(shapiq.Game):
         return np.array(scores, dtype=float)
 
     def _call_distilbert(self, texts: list[str]) -> np.ndarray:
-        """Batch-encode texts and return P(unsafe) from the classification head."""
-        inputs = self._tokenizer(
-            texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-        )
-        with torch.no_grad():
-            logits = self._model(**inputs).logits
-        return logits.softmax(-1)[:, 1].cpu().numpy()
+        """Return P(unsafe) for a batch of texts via PromptRiskPredictor."""
+        return np.array([self._predictor.predict_proba(t) for t in texts], dtype=float)
 
 
 # ------------------------------------------------------------------
