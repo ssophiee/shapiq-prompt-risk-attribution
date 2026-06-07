@@ -199,20 +199,34 @@ def aggregate_to_words(
         word_sv.plot_sentence(words=word_names)
         word_sv.plot_force(feature_names=word_names)
     """
-    # Build word groups: a new word starts at every token with a Ġ prefix
-    # (or at position 0 which never has a prefix)
+    # Detect tokenizer convention:
+    #   GPT-2/Llama style: word-initial tokens carry a Ġ (space) prefix.
+    #   BERT/DistilBERT WordPiece: continuation subwords carry a ## prefix.
+    space_prefix_style = any(t.startswith("Ġ") for t in token_names)
+
     word_groups: list[list[int]] = []
     current: list[int] = [0]
     for i in range(1, len(token_names)):
-        if token_names[i].startswith("Ġ"):
+        if space_prefix_style:
+            is_new_word = token_names[i].startswith("Ġ")
+        else:
+            is_new_word = not token_names[i].startswith("##")
+        if is_new_word:
             word_groups.append(current)
             current = [i]
         else:
             current.append(i)
     word_groups.append(current)
 
+    def _strip_prefix(token: str) -> str:
+        if token.startswith("Ġ"):
+            return token[1:]
+        if token.startswith("##"):
+            return token[2:]
+        return token
+
     word_names = [
-        "".join(token_names[i].replace("Ġ", "") for i in grp)
+        "".join(_strip_prefix(token_names[i]) for i in grp)
         for grp in word_groups
     ]
     n_words = len(word_groups)
@@ -241,20 +255,25 @@ def aggregate_to_words(
 # ------------------------------------------------------------------
 
 
-def run_safety_shapiq(game: SafetyAnalysisGame, budget: int = 256) -> tuple:
-    """Approximate SV and k-SII interactions for a SafetyAnalysisGame.
+def run_safety_shapiq(game: SafetyAnalysisGame, budget: int = 256) -> shapiq.InteractionValues:
+    """Approximate k-SII interactions for a SafetyAnalysisGame.
+
+    Returns a single InteractionValues object where order-1 entries equal
+    Shapley values and order-2 entries are pairwise k-SII interactions.
 
     Args:
         game: A configured SafetyAnalysisGame instance.
-        budget: Number of coalition samples for KernelSHAP / KernelSHAPIQ.
+        budget: Number of coalition samples for KernelSHAPIQ.
 
     Returns:
-        Tuple of (sv, ksii): first-order Shapley values and pairwise k-SII.
+        k-SII InteractionValues with min_order=0, max_order=2.
     """
-    n = game.n_players
-    sv = shapiq.KernelSHAP(n=n, random_state=42).approximate(budget=budget, game=game)
-    ksii = shapiq.KernelSHAPIQ(n=n, index="k-SII", max_order=2, random_state=42).approximate(budget=budget, game=game)
-    return sv, ksii
+    return shapiq.KernelSHAPIQ(
+        n=game.n_players,
+        index="k-SII",
+        max_order=2,
+        random_state=42,
+    ).approximate(budget=budget, game=game)
 
 
 # ------------------------------------------------------------------

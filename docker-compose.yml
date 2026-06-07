@@ -1,0 +1,66 @@
+# Modular service definitions for the prompt-risk attribution project.
+#
+# Each MLOps concern is its own service. Profiles keep them independent so you
+# only spin up what you need:
+#
+#   docker compose up api                      # serve model + web UI  (default)
+#   docker compose --profile train up train    # run a CPU training job
+#   docker compose --profile gpu up train-gpu  # run a CUDA training job
+#
+# Trained models and data are mounted as volumes (not baked into images), keeping
+# code and DVC-tracked artifacts on separate lifecycles.
+name: shapiq-attribution
+
+services:
+  # ----- Serving: FastAPI + SHAPIQ attribution + web UI -----------------------
+  api:
+    build:
+      context: .
+      dockerfile: dockerfiles/api.dockerfile
+    image: shapiq-api:latest
+    ports:
+      - "8000:8000"
+    environment:
+      MODEL_DIR: /app/models/prompt_risk_distilbert
+      RISK_THRESHOLD: "0.5"
+      DEVICE: cpu
+    volumes:
+      - ./models:/app/models:ro
+    restart: unless-stopped
+
+  # ----- Training (CPU) -------------------------------------------------------
+  train:
+    profiles: ["train"]
+    build:
+      context: .
+      dockerfile: dockerfiles/train.dockerfile
+    image: shapiq-train:latest
+    environment:
+      WANDB_MODE: offline
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+
+  # ----- Training (GPU / CUDA hosts only) -------------------------------------
+  train-gpu:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: dockerfiles/train.gpu.dockerfile
+    image: shapiq-train-gpu:latest
+    environment:
+      WANDB_MODE: offline
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./reports:/app/reports
+      - ./configs:/app/configs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

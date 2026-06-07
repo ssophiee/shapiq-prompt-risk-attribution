@@ -20,6 +20,8 @@ from pathlib import Path
 
 import numpy as np
 
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Token-level safety attribution over a prompt dataset")
@@ -63,7 +65,7 @@ def attribute_prompt(
     backend: str = "distilbert",
     model_name: str = "meta-llama/Llama-Guard-3-1B",
 ) -> dict:
-    from shapiq_attribution.safety_analysis import (
+    from src.shapiq_attribution.safety_analysis import (
         SafetyAnalysisGame,
         aggregate_to_words,
         run_safety_shapiq,
@@ -73,15 +75,21 @@ def attribute_prompt(
         game = SafetyAnalysisGame(prompt, model=predictor, backend=backend)
     else:
         game = SafetyAnalysisGame(prompt, model_name=model_name, backend=backend)
-    sv, ksii = run_safety_shapiq(game, budget=budget)
+    sii = run_safety_shapiq(game, budget=budget)
 
-    p_risky = predictor.predict_proba(prompt) if predictor is not None else float(game._baseline)
+    p_risky = predictor.predict_proba(prompt) if predictor is not None else float(game._call_model([prompt])[0])
     token_names = game.token_names
-    sv_values = [float(sv[(j,)]) for j in range(len(token_names))]
+    n = len(token_names)
+    sv_values = [float(sii[(j,)]) for j in range(n)]
     top_3 = sorted(zip(token_names, sv_values), key=lambda x: abs(x[1]), reverse=True)[:3]
 
-    # Optional: aggregate subword tokens to readable words for logging
-    word_sv, word_names = aggregate_to_words(sv, token_names)
+    word_sv, word_names = aggregate_to_words(sii, token_names)
+
+    pairs = [
+        {"tokens": [token_names[i], token_names[j]], "indices": [i, j], "value": float(sii[(i, j)])}
+        for i in range(n) for j in range(i + 1, n)
+    ]
+    top_interactions = sorted(pairs, key=lambda x: abs(x["value"]), reverse=True)[:5]
 
     return {
         "prompt": prompt,
@@ -91,6 +99,7 @@ def attribute_prompt(
         "top_3_tokens": [t for t, _ in top_3],
         "words": word_names,
         "word_shapley_values": [float(word_sv[(j,)]) for j in range(len(word_names))],
+        "top_interactions": top_interactions,
         "budget": budget,
     }
 
@@ -100,7 +109,7 @@ def run(args: argparse.Namespace) -> list[dict]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.backend == "distilbert":
-        from shapiq_attribution.model import PromptRiskPredictor
+        from src.shapiq_attribution.model import PromptRiskPredictor
         predictor = PromptRiskPredictor.from_pretrained(args.model_path)
     else:
         # llama_guard: SafetyAnalysisGame loads the model itself via model_name
