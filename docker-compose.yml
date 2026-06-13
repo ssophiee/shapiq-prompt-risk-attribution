@@ -26,6 +26,8 @@ services:
       DEVICE: cpu
     volumes:
       - ./models:/app/models:ro
+      # Persist logged prediction features for drift monitoring across restarts.
+      - ./data/monitoring:/app/data/monitoring
     restart: unless-stopped
 
   # ----- Training (CPU) -------------------------------------------------------

@@ -35,6 +35,26 @@ def test(ctx: Context) -> None:
     ctx.run("uv run coverage report -m -i", echo=True, pty=not WINDOWS)
 
 @task
+def build_baseline(ctx: Context) -> None:
+    """Snapshot the training-set feature distribution for drift monitoring."""
+    ctx.run(
+        "uv run python -m shapiq_attribution.monitoring baseline",
+        echo=True,
+        pty=not WINDOWS,
+    )
+
+
+@task
+def monitor_report(ctx: Context) -> None:
+    """Generate the Evidently drift + health report from logged predictions."""
+    ctx.run(
+        "uv run python -m shapiq_attribution.monitoring report",
+        echo=True,
+        pty=not WINDOWS,
+    )
+
+
+@task
 def docker_build_train(ctx: Context, progress: str = "plain") -> None:
     """Build the training Docker image."""
     ctx.run(

@@ -25,6 +25,12 @@ class DummyPredictor:
         return self.probability
 
 
+@pytest.fixture(autouse=True)
+def _no_monitoring_io(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stop /predict from writing monitoring rows to the real data directory."""
+    monkeypatch.setattr(api, "log_prediction", lambda *args, **kwargs: None)
+
+
 @pytest.fixture
 def client() -> TestClient:
     """A TestClient with the lifespan disabled (no real model load)."""

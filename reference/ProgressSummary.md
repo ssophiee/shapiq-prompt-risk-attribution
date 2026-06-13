@@ -1,6 +1,6 @@
 # shapiq_attribution — Work Plan v2 (Equal MLOps Split)
 
-> Last updated: 2026-06-03
+> Last updated: 2026-06-13
 
 > **Current direction**: the project is no longer centered on CoT dataset generation.
 > The active pipeline trains a prompt-risk classifier and uses SHAPIQ attribution
@@ -45,21 +45,25 @@
 | **Visualisation** | `visualize.py` | ✅ Done | — | unchanged |
 | **Pipeline** | `pipeline.py` | ✅ Done | B | CLI entrypoint for attribution runs |
 | **Config** | `configs/train.yaml` | ✅ Done | A | data paths, DistilBERT config, hyperparams, W&B project, output paths |
-| | `configs/attribution.yaml` | ⬜ Not started | B | `model_path`, `budget`, `backend` (default `distilbert`), `dataset`, W&B project |
+| | `configs/attribution.yaml` | 🚫 Replaced | B | superseded by flat argparse CLI in `experiments/run_attribution.py` (no Hydra for attribution) |
 | | `configs/sweep.yaml` | ⬜ Not started | A | W&B Sweep search space |
 | **Docker** | `train.Dockerfile` | ✅ Done | A | pytorch base, uv deps, `train.py` entrypoint |
-| | `api.Dockerfile` | ⬜ Not started | B | python:3.11-slim, API deps, port 8080 |
+| | `api.dockerfile` | ✅ Done | B | python:3.13-slim, uv deps, port 8000, `HEALTHCHECK`, model mounted at runtime (not baked) |
+| | `docker-compose.yml` | ✅ Done | Both | profiled services: `api` (default), `train` (CPU), `train-gpu` (CUDA); volumes for models/data/reports/configs |
 | **Tests** | `test_data.py` | ✅ Done | A | data schema, normalization, JSONL round-trip |
 | | `test_model.py` | ✅ Done | A | `PromptRiskPredictor` callable and P(risky) output |
 | | `test_train.py` | ✅ Done | A | dataset/tokenization helper and metric tests |
 | | `test_split_data.py` | ✅ Done | A | deterministic split, label coverage, split validation |
-| | `test_attribution.py` | ⬜ Not started | B | fixtures, mock classifier, parametrized |
-| | `test_api.py` | ⬜ Not started | B | endpoint contract, mock model |
-| **CI** | GitHub Actions | 🔄 In progress | Both | split into `ci-train.yaml` + `ci-api.yaml` |
-| **API** | `api.py` | ⬜ Not started | B | FastAPI `POST /attribute` with lifespan |
+| | `test_experiments.py` | ✅ Done | B | argparse units, `load_prompts` fixture, `attribute_prompt` with mock predictor |
+| | `test_api.py` | ✅ Done | B | endpoint contract, 422 validation, 503 without model, mocked `DummyPredictor` via `TestClient` |
+| **CI** | GitHub Actions | ✅ Done | Both | `ci-train.yaml` (training tests + image) + `ci-api.yaml` (api/monitoring/experiments tests + coverage + image); weekly `monitoring.yaml` cron |
+| **API** | `api.py` | ✅ Done | B | FastAPI; lifespan loads DistilBERT once; `POST /predict`, `POST /attribute` (word SVs + interactions), `GET /health`, `GET /` web UI; Pydantic validation |
+| | `web.py` | ✅ Done | B | self-contained HTML/JS UI (`INDEX_HTML`) served at `/`; calls `/predict` + `/attribute` |
+| | `monitoring.py` | ✅ Done | B | feature extraction, per-request CSV logging, training baseline, Evidently drift report + P(risky) health test; `baseline`/`report` CLI |
+| | `test_monitoring.py` | ✅ Done | B | feature values, CSV header/append round-trip, `build_baseline` with stub, Evidently HTML render |
 | **Cloud** | GCP training job | ⬜ Not started | A | GCP Vertex AI or Cloud Run Job |
 | | GCP API service | ⬜ Not started | B | GCP Cloud Run |
-| **Monitoring** | Evidently drift | ⬜ Not started | B | derived features: `prompt_len`, `token_count`, `p_risky`, `top_token_sv` vs. training baseline |
+| **Monitoring** | Evidently drift | ✅ Done | B | `monitoring.py`: derived features `prompt_len`/`token_count`/`p_risky` vs. training baseline; `DataDriftPreset` + `MeanValue` health test → HTML; `.github/workflows/monitoring.yaml` weekly cron |
 
 ### Legend
 | Icon | Meaning |
@@ -150,7 +154,7 @@ Attribution operates at the **token / word level** on the raw prompt text.
 
 | # | Task | MLOps angle | Status |
 |---|---|---|---|
-| B0.1 | `PromptRiskPredictor` wired into `SafetyAnalysisGame` | `SafetyAnalysisGame` accepts `PromptRiskPredictor` directly; distilbert backend routes each coalition text through `predict_proba`; tokenizer + device pulled from predictor automatically | ✅ Done |
+| B0.1 | `PromptRiskPredictor` wired into `SafetyAnalysisGame` | `SafetyAnalysisGame` accepts `PromptRiskPredictor` directly; distilbert backend routes each coalition text through `predict_proba`; tokenizer + device pulled from predictor automatically. `llama_guard` backend also supported for offline experiments (not served via API) | ✅ Done |
 | B0.2 | Budget-adaptive approximator in `run_safety_shapiq` | use `KernelSHAP` / `KernelSHAPIQ` with configurable `budget`; document token-count vs budget tradeoff for short prompts (typically 8–20 tokens) | ⬜ Not started |
 
 ### B1. Experiments + Reporting
@@ -161,7 +165,7 @@ No Hydra; config is simple and flat. Tested via `tests/test_experiments.py` with
 | # | Task | Status |
 |---|---|---|
 | B1.1 | `experiments/run_attribution.py` — argparse CLI; loads `PromptRiskPredictor`, runs attribution on `n` prompts | ✅ Done |
-| B1.2 | Save token-level SVs per prompt to `reports/figures/` as JSON; optional word aggregation via `aggregate_to_words` for PNG readability | ✅ Done |
+| B1.2 | Save token-level SVs per prompt as JSON under `reports/results/{backend}/` (`distilbert/`, `llama/version1/`, `llama/version2/`); optional word aggregation via `aggregate_to_words` for PNG readability | ✅ Done |
 | B1.3 | W&B run logging — `p_risky`, `top_3_tokens`, `budget`, `prompt` per sample | ✅ Done |
 | B1.4 | `tests/test_experiments.py` — argparse unit tests, `load_prompts` fixture, `attribute_prompt` with mock predictor | ✅ Done |
 | B1.5 | `evaluate.py` — aggregate mean absolute SV per token-position index across runs; surface highest-attributed tokens | 🔬 Out of scope |
@@ -172,10 +176,10 @@ No Hydra; config is simple and flat. Tested via `tests/test_experiments.py` with
 
 | # | Task | MLOps angle | Status |
 |---|---|---|---|
-| B2.1 | `api.py` skeleton | FastAPI `POST /attribute` with Pydantic input validation + lifespan startup (load classifier) | ⬜ Not started |
-| B2.2 | `api.Dockerfile` | `FROM python:3.11-slim`; install API deps; expose port 8080 | ⬜ Not started |
-| B2.3 | Local API smoke test | `docker build` + `docker run` + `curl POST /attribute` | ⬜ Not started |
-| B2.4 | `ci-api.yaml` GitHub Actions | on push: `pytest tests/test_attribution.py tests/test_api.py --cov`; build `api.Dockerfile` | ⬜ Not started |
+| B2.1 | `api.py` | FastAPI app with lifespan classifier load, Pydantic validation; `POST /predict`, `POST /attribute` (word SVs + Shapley interactions), `GET /health`, `GET /` web UI; env-config `MODEL_DIR`/`RISK_THRESHOLD`/`MAX_LENGTH`/`DEVICE`. Llama Guard intentionally not served (heavy/gated) — notebooks/scripts only | ✅ Done |
+| B2.2 | `api.dockerfile` | `FROM python:3.13-slim`; uv layered deps; port 8000; stdlib `HEALTHCHECK` on `/health`; model mounted at runtime, not baked | ✅ Done |
+| B2.3 | Local API smoke test | `docker compose up api` (+ `web.py` UI at `/`); `docker-compose.yml` wires model volume + env | ✅ Done |
+| B2.4 | `ci-api.yaml` GitHub Actions | on push/PR: `coverage run -m pytest test_api/test_monitoring/test_experiments -k "not attribute_prompt"` (gated Llama-Guard integration tests deselected), upload `coverage.xml`, build `api.dockerfile` | ✅ Done |
 | B2.5 | GCP Cloud Run deployment | push image to Artifact Registry; deploy to Cloud Run; expose public endpoint | ⬜ Not started |
 
 ### B3. Monitoring (Evidently)
@@ -186,11 +190,11 @@ No Hydra; config is simple and flat. Tested via `tests/test_experiments.py` with
 
 | # | Task | MLOps angle | Status |
 |---|---|---|---|
-| B3.1 | Define feature schema | extract per-request: `prompt_len`, `token_count`, `p_risky`, `top_token_sv`; log to `data/predictions.csv` | ⬜ Not started |
-| B3.2 | Baseline snapshot | run same extraction on training set; save to `data/baseline.csv`; DVC-track both | ⬜ Not started |
-| B3.3 | Evidently drift report | `DataDriftPreset` on numerical columns: `prompt_len`, `token_count`, `top_token_sv`; generate HTML report | ⬜ Not started |
-| B3.4 | P(risky) health check | `TestSuite`: assert mean P(risky) ∈ [0.2, 0.8]; alert if distribution collapses to all-0 or all-1 | ⬜ Not started |
-| B3.5 | Scheduled monitoring | GH Actions cron (or Cloud Scheduler) triggers Evidently report weekly on accumulated predictions | ⬜ Not started |
+| B3.1 | Define feature schema | `monitoring.extract_features` → `prompt_len`, `token_count`, `p_risky`; `/predict` calls `log_prediction` (best-effort, wrapped in try/except) → `data/monitoring/predictions.csv`; mounted as a docker-compose volume | ✅ Done |
+| B3.2 | Baseline snapshot | `build_baseline` runs the predictor over `data/processed/train.jsonl` → `data/monitoring/baseline.csv`; `inv build-baseline` / `... monitoring baseline` CLI; gitignored + DVC-tracked | ✅ Done |
+| B3.3 | Evidently drift report | `generate_report` builds `Report([DataDriftPreset(), ...])` (Evidently 0.7) over numerical columns → `reports/monitoring/drift_report.html`; verified end-to-end on real DistilBERT baseline | ✅ Done |
+| B3.4 | P(risky) health check | `MeanValue(column="p_risky", tests=[gte(0.2), lte(0.8)])` with `include_tests=True`; fails if the live mean collapses out of band | ✅ Done |
+| B3.5 | Scheduled monitoring | `.github/workflows/monitoring.yaml` weekly cron + `workflow_dispatch`: DVC-pull data, regenerate report, upload HTML artifact | ✅ Done |
 
 ### B4. Shared Infrastructure
 
@@ -204,9 +208,9 @@ No Hydra; config is simple and flat. Tested via `tests/test_experiments.py` with
 
 | # | Task | Details | Status |
 |---|---|---|---|
-| B5.1 | `test_attribution.py` | `parse_cot_steps` on 3 fixtures; `make_classifier_value_function` with mock; `@pytest.mark.parametrize` over coalition sizes | ⬜ Not started |
-| B5.2 | `test_api.py` | endpoint contract with mock classifier; Pydantic validation errors return 422; response schema check | ⬜ Not started |
-| B5.3 | Code coverage | `pytest --cov=src --cov-report=xml`; report uploaded in `ci-api.yaml` | ⬜ Not started |
+| B5.1 | `test_experiments.py` | argparse units, `load_prompts` fixture, `attribute_prompt` with mock predictor (replaces planned `test_attribution.py`) | ✅ Done |
+| B5.2 | `test_api.py` | `TestClient` + `DummyPredictor`; `/`, `/health`, `/predict` risky/safe paths; empty prompt → 422; no model → 503 | ✅ Done |
+| B5.3 | Code coverage | `coverage run -m pytest` + `coverage xml`; `coverage.xml` uploaded as artifact in `ci-api.yaml` | ✅ Done |
 
 ---
 
@@ -218,16 +222,16 @@ No Hydra; config is simple and flat. Tested via `tests/test_experiments.py` with
 | S2: Version control + structure | git, code layout | — | ✅ Done |
 | S2: Data versioning (DVC) | prompt-risk data + classifier artifact; `dvc.yaml` pipeline | — | ✅ Done |
 | S2: CLI creation | — | `pipeline.py` CLI | ✅ Done |
-| S3: Reproducibility (Docker) | `train.Dockerfile` | `api.Dockerfile` | 🔄 In progress |
+| S3: Reproducibility (Docker) | `train.dockerfile` (+ GPU variant) | `api.dockerfile` + `docker-compose.yml` (profiled api/train/train-gpu services) | ✅ Done |
 | S3: Configuration (Hydra) | `configs/train.yaml`; sweep still pending | `configs/attribution.yaml` | 🔄 In progress |
 | S4: Debugging + profiling | PyTorch profiler on train loop | shapiq budget tradeoff | ⬜ Not started |
 | S4: Experiment tracking (W&B) | training metrics complete; sweeps pending | attribution run metadata | 🔄 In progress |
-| S5: Unit testing + coverage | `test_data`, `test_split_data`, `test_model`, `test_train`; coverage pending | `test_attribution`, `test_api`; `--cov` | 🔄 In progress |
-| S5: CI / GitHub Actions | `ci-train.yaml` | `ci-api.yaml` | 🔄 In progress |
+| S5: Unit testing + coverage | `test_data`, `test_split_data`, `test_model`, `test_train`; coverage pending | `test_experiments`, `test_api`, `test_monitoring`; coverage uploaded in `ci-api.yaml` | 🔄 In progress |
+| S5: CI / GitHub Actions | `ci-train.yaml` | `ci-api.yaml` + `monitoring.yaml` cron | ✅ Done |
 | S5: Pre-commit hooks | contributes | owns config | ⬜ Not started |
 | S6: Cloud (GCP) | Vertex AI / Cloud Run Jobs training | Cloud Run API service | ⬜ Not started |
-| S7: Deployment (FastAPI) | — | `api.py` + Pydantic + lifespan | ⬜ Not started |
-| S8: Monitoring (Evidently) | — | `DataDriftPreset` on derived numerical features (`prompt_len`, `step_count`, `avg_step_len`); `TestSuite` on P(risky) distribution | ⬜ Not started |
+| S7: Deployment (FastAPI) | — | `api.py` + Pydantic + lifespan + web UI; local/Docker serving done; GCP Cloud Run pending | 🔄 In progress |
+| S8: Monitoring (Evidently) | — | `monitoring.py`: `DataDriftPreset` on derived numerical features (`prompt_len`, `token_count`, `p_risky`) + `MeanValue` test on P(risky); weekly GH Actions cron uploads HTML report | ✅ Done |
 | S10: Hyperparameter optimisation | W&B Sweeps (`configs/sweep.yaml`) infrastructure complete; final best-config bake-in deferred until A1.9 | — | 🔄 In progress |
 | S10: Documentation (mkdocs) | — | already scaffolded; keep updated | 🔄 In progress |
 

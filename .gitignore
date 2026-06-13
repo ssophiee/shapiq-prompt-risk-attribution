@@ -12,3 +12,9 @@ data/processed/*.jsonl
 !data/processed/*.jsonl.dvc
 outputs/
 wandb/
+notes.md
+
+# Monitoring: live predictions + generated reports are runtime artifacts.
+# The baseline CSV is reproducible via `inv build-baseline` and DVC-tracked.
+data/monitoring/*.csv
+reports/monitoring/

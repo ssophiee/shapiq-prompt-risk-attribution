@@ -1,0 +1,47 @@
+name: ci-api
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test-and-build-api:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run serving-slice tests with coverage
+        # The two `attribute_prompt` integration tests load the gated
+        # meta-llama/Llama-Guard-3-1B model and need HF auth, so they are
+        # deselected here; the argparse CLI tests still run.
+        run: |
+          uv run coverage run -m pytest \
+            tests/test_api.py tests/test_monitoring.py tests/test_experiments.py \
+            -k "not attribute_prompt"
+          uv run coverage report -m -i
+          uv run coverage xml -i
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-api
+          path: coverage.xml
+          if-no-files-found: warn
+
+      - name: Build API image
+        run: docker build -t shapiq-api:latest . -f dockerfiles/api.dockerfile --progress=plain

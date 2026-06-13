@@ -6,6 +6,10 @@ and exposes two endpoints:
 - ``POST /predict``: P(unsafe) and a risky/safe label for a prompt.
 - ``POST /attribute``: word-level Shapley values explaining the prediction.
 
+Each ``/predict`` call also logs a row of derived numerical features (see
+``monitoring.py``) for downstream Evidently drift monitoring; this is
+best-effort and never blocks a prediction.
+
 Llama Guard is intentionally *not* served here: it is heavy, gated, and slow.
 Experiment with it in notebooks / scripts via
 ``safety_analysis.SafetyAnalysisGame(..., backend="llama_guard")`` or
@@ -33,6 +37,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .model import PromptRiskPredictor
+from .monitoring import extract_features, log_prediction
 from .web import INDEX_HTML
 
 MODEL_DIR = os.environ.get("MODEL_DIR", "models/prompt_risk_distilbert")
@@ -177,6 +182,11 @@ def health() -> dict[str, object]:
 def predict(request: PredictRequest, predictor: PredictorDep) -> PredictResponse:
     """Classify the risk of a single prompt."""
     probability = predictor.predict_proba(request.prompt)
+    # Monitoring is best-effort: a logging failure must never break a prediction.
+    try:
+        log_prediction(extract_features(request.prompt, probability))
+    except Exception as exc:  # noqa: BLE001 - monitoring is non-critical
+        print(f"[api] WARNING: could not log prediction features: {exc}")
     return PredictResponse(
         prompt=request.prompt,
         risk_probability=probability,
@@ -219,6 +229,11 @@ def attribute(request: AttributeRequest, predictor: PredictorDep) -> AttributeRe
     pairs.sort(key=lambda pair: abs(pair.value), reverse=True)
 
     probability = predictor.predict_proba(request.prompt)
+    # Monitoring is best-effort: a logging failure must never break a request.
+    try:
+        log_prediction(extract_features(request.prompt, probability))
+    except Exception as exc:  # noqa: BLE001 - monitoring is non-critical
+        print(f"[api] WARNING: could not log prediction features: {exc}")
     return AttributeResponse(
         prompt=request.prompt,
         risk_probability=probability,
