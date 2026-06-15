@@ -41,20 +41,20 @@ stages:
       size: 631
     - path: data/processed/test.jsonl
       hash: md5
-      md5: dddcb6052973055ba845dc82247b39c3
-      size: 54985
+      md5: 79109b4b144de243ff713640a74c01dd
+      size: 1512333
     - path: data/processed/train.jsonl
       hash: md5
-      md5: 65e4168fe2782f29abf95a8d1cb23b87
-      size: 429054
+      md5: a45115f150a9ee8b588752d59f550882
+      size: 12284746
     - path: data/processed/val.jsonl
       hash: md5
-      md5: 720d765ed83f6835de6a15ef1ba0a0eb
-      size: 56788
+      md5: bfaa37a410e9fd4171ecfb2d2c734aa7
+      size: 1513779
     - path: src/shapiq_attribution/data.py
       hash: md5
-      md5: 771d064204f5b1781e3174b954f1deed
-      size: 14022
+      md5: 59a16ce8e809ab7d1d5044799a47347d
+      size: 18753
     - path: src/shapiq_attribution/evaluate.py
       hash: md5
       md5: f41fc28394c32a8edb3499eed20389dc
@@ -70,13 +70,13 @@ stages:
     outs:
     - path: models/prompt_risk_distilbert
       hash: md5
-      md5: 80dea7e5ee6b1218784a1c42543e247b.dir
+      md5: e43ea16adb90118e46083ca120dab3d6.dir
       size: 268545213
       nfiles: 4
     - path: reports/metrics.json
       hash: md5
-      md5: 5f97b4856269a103077ae9c063677318
-      size: 296
+      md5: b025ac0f6d92e2608a4338d5297b3272
+      size: 441
   prepare_dataset:
     cmd: uv run python -m shapiq_attribution.data build-dataset --raw-dir 
       data/raw --output-path data/processed/prompt_risk_dataset.jsonl
