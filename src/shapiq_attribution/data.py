@@ -18,6 +18,11 @@ HARM_BENCH_DATASET = "walledai/HarmBench"
 HARM_BENCH_CONFIG = "standard"
 WILDGUARD_DATASET = "allenai/wildguardmix"
 WILDGUARD_CONFIG = "wildguardtest"
+BEAVERTAILS_DATASET = "PKU-Alignment/BeaverTails"
+PKU_SAFE_RLHF_DATASET = "PKU-Alignment/PKU-SafeRLHF"
+TOXIC_CHAT_DATASET = "lmsys/toxic-chat"
+TOXIC_CHAT_CONFIG = "toxicchat0124"
+XSTEST_DATASET = "walledai/XSTest"
 
 
 class PromptRiskExample(TypedDict):
@@ -141,6 +146,75 @@ def normalize_wildguard_safe_rows(
     return _limit_examples(examples, max_samples)
 
 
+def normalize_wildguard_prompt_rows(
+    rows: Iterable[Mapping[str, Any]],
+    max_samples: int | None = None,
+) -> list[PromptRiskExample]:
+    """Normalize WildGuardMix rows using prompt harmfulness labels."""
+    examples = []
+    for row in rows:
+        prompt = _first_text_value(row, ("prompt",))
+        label_value = str(row.get("prompt_harm_label", "")).strip().lower()
+        if prompt is None or label_value not in {"harmful", "unharmful"}:
+            continue
+        label = 1 if label_value == "harmful" else 0
+        examples.append(make_prompt_risk_example(prompt=prompt, label=label, source="wildguard"))
+    return _limit_examples(examples, max_samples)
+
+
+def normalize_toxic_chat_rows(
+    rows: Iterable[Mapping[str, Any]],
+    max_samples: int | None = None,
+) -> list[PromptRiskExample]:
+    """Normalize ToxicChat rows from toxicity and jailbreaking labels."""
+    examples = []
+    for row in rows:
+        prompt = _first_text_value(row, ("user_input",))
+        if prompt is None:
+            continue
+        toxicity = int(row.get("toxicity", 0) or 0)
+        jailbreaking = int(row.get("jailbreaking", 0) or 0)
+        label = 1 if toxicity == 1 or jailbreaking == 1 else 0
+        examples.append(make_prompt_risk_example(prompt=prompt, label=label, source="toxicchat"))
+    return _limit_examples(examples, max_samples)
+
+
+def normalize_beavertails_rows(
+    rows: Iterable[Mapping[str, Any]],
+    max_samples: int | None = None,
+) -> list[PromptRiskExample]:
+    """Normalize BeaverTails rows using prompt and is_safe labels."""
+    examples = []
+    for row in rows:
+        prompt = _first_text_value(row, ("prompt",))
+        if prompt is None or "is_safe" not in row:
+            continue
+        label = 0 if bool(row["is_safe"]) else 1
+        examples.append(make_prompt_risk_example(prompt=prompt, label=label, source="beavertails"))
+    return _limit_examples(examples, max_samples)
+
+
+def normalize_xstest_rows(
+    rows: Iterable[Mapping[str, Any]],
+    max_samples: int | None = None,
+) -> list[PromptRiskExample]:
+    """Normalize XSTest rows as an evaluation set."""
+    examples = []
+    for row in rows:
+        prompt = _first_text_value(row, ("prompt",))
+        label_value = str(row.get("label", row.get("type", ""))).strip().lower()
+        if prompt is None:
+            continue
+        if "safe" in label_value and "unsafe" not in label_value:
+            label = 0
+        elif "unsafe" in label_value:
+            label = 1
+        else:
+            continue
+        examples.append(make_prompt_risk_example(prompt=prompt, label=label, source="xstest"))
+    return _limit_examples(examples, max_samples)
+
+
 def load_advbench(token: str | None = None, max_samples: int | None = None) -> list[PromptRiskExample]:
     """Load and normalize AdvBench from Hugging Face.
 
@@ -187,6 +261,29 @@ def load_wildguard(token: str, split: str = "test") -> list[dict[str, Any]]:
     """Load raw WildGuardMix examples for compatibility with existing pipeline code."""
     ds = load_dataset(WILDGUARD_DATASET, WILDGUARD_CONFIG, token=token)
     return list(ds[split])
+
+def load_wildguard_prompts(token: str | None = None, max_samples: int | None = None) -> list[PromptRiskExample]:
+    """Load WildGuardMix prompt examples with harmful and unharmful labels."""
+    rows = load_dataset(WILDGUARD_DATASET, "wildguardtrain", split="train", token=token)
+    return normalize_wildguard_prompt_rows(rows, max_samples=max_samples)
+
+
+def load_toxic_chat(token: str | None = None, max_samples: int | None = None) -> list[PromptRiskExample]:
+    """Load ToxicChat prompt examples."""
+    rows = load_dataset(TOXIC_CHAT_DATASET, TOXIC_CHAT_CONFIG, split="train", token=token)
+    return normalize_toxic_chat_rows(rows, max_samples=max_samples)
+
+
+def load_beavertails(token: str | None = None, max_samples: int | None = None) -> list[PromptRiskExample]:
+    """Load BeaverTails prompt examples."""
+    rows = load_dataset(BEAVERTAILS_DATASET, split="330k_train", token=token)
+    return normalize_beavertails_rows(rows, max_samples=max_samples)
+
+
+def load_xstest(token: str | None = None, max_samples: int | None = None) -> list[PromptRiskExample]:
+    """Load XSTest examples for evaluation."""
+    rows = load_dataset(XSTEST_DATASET, split="test", token=token)
+    return normalize_xstest_rows(rows, max_samples=max_samples)
 
 
 def get_harmful_examples(token: str, split: str = "test") -> list[dict[str, Any]]:
@@ -260,19 +357,31 @@ def prepare_raw_snapshots(
     output_path = Path(output_dir)
     token = hf_token or os.environ.get("HF_TOKEN")
     snapshots = {
-        "advbench": (
-            load_advbench(token=token, max_samples=max_samples_per_source),
-            output_path / "advbench.jsonl",
-        ),
-        "harmbench": (
-            load_harmbench(token=token, max_samples=max_samples_per_source),
-            output_path / "harmbench.jsonl",
-        ),
-        "wildguard": (
-            load_wildguard_safe(token=token, max_samples=max_samples_per_source),
-            output_path / "wildguard_safe.jsonl",
-        ),
-    }
+    "advbench": (
+        load_advbench(token=token, max_samples=max_samples_per_source),
+        output_path / "advbench.jsonl",
+    ),
+    "harmbench": (
+        load_harmbench(token=token, max_samples=max_samples_per_source),
+        output_path / "harmbench.jsonl",
+    ),
+    "wildguard": (
+        load_wildguard_prompts(token=token, max_samples=25000),
+        output_path / "wildguard.jsonl",
+    ),
+    "toxicchat": (
+        load_toxic_chat(token=token, max_samples=10000),
+        output_path / "toxicchat.jsonl",
+    ),
+    "beavertails": (
+        load_beavertails(token=token, max_samples=12000),
+        output_path / "beavertails.jsonl",
+    ),
+    "xstest": (
+        load_xstest(token=token),
+        output_path / "xstest_eval.jsonl",
+    ),
+        }
     written_paths = {}
     for source, (examples, path) in snapshots.items():
         write_prompt_risk_jsonl(examples, path)
@@ -309,8 +418,22 @@ def build_prompt_risk_dataset(raw_dir: str | Path, output_path: str | Path) -> N
     """
     raw_path = Path(raw_dir)
     examples = []
-    for filename in ("advbench.jsonl", "harmbench.jsonl", "wildguard_safe.jsonl"):
-        examples.extend(load_prompt_risk_jsonl(raw_path / filename))
+    seen_prompts = set()
+
+    for filename in (
+        "advbench.jsonl",
+        "harmbench.jsonl",
+        "wildguard.jsonl",
+        "toxicchat.jsonl",
+        "beavertails.jsonl",
+    ):
+        for example in load_prompt_risk_jsonl(raw_path / filename):
+            prompt_key = example["prompt"].strip().lower()
+            if prompt_key in seen_prompts:
+                continue
+            seen_prompts.add(prompt_key)
+            examples.append(example)
+
     write_prompt_risk_jsonl(examples, output_path)
 
 

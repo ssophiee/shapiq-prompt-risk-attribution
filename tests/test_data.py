@@ -116,7 +116,16 @@ def test_build_prompt_risk_dataset_combines_raw_snapshots(tmp_path) -> None:
     )
     write_prompt_risk_jsonl(
         [make_prompt_risk_example(prompt="wild safe", label=0, source="wildguard")],
-        raw_dir / "wildguard_safe.jsonl",
+        raw_dir / "wildguard.jsonl",
+    )
+
+    write_prompt_risk_jsonl(
+    [make_prompt_risk_example(prompt="toxic risky", label=1, source="toxicchat")],
+    raw_dir / "toxicchat.jsonl",
+    )   
+    write_prompt_risk_jsonl(
+    [make_prompt_risk_example(prompt="beaver safe", label=0, source="beavertails")],
+    raw_dir / "beavertails.jsonl",
     )
 
     build_prompt_risk_dataset(raw_dir=raw_dir, output_path=output_path)
@@ -125,4 +134,6 @@ def test_build_prompt_risk_dataset_combines_raw_snapshots(tmp_path) -> None:
         {"prompt": "adv risky", "label": 1, "source": "advbench"},
         {"prompt": "harm risky", "label": 1, "source": "harmbench"},
         {"prompt": "wild safe", "label": 0, "source": "wildguard"},
+        {"prompt": "toxic risky", "label": 1, "source": "toxicchat"},
+        {"prompt": "beaver safe", "label": 0, "source": "beavertails"},
     ]

@@ -47,7 +47,7 @@ def split_examples(
         val_size: Fraction of examples assigned to the validation split.
         test_size: Fraction of examples assigned to the test split.
         seed: Random seed used for deterministic shuffling.
-        stratify: Whether to split separately per label.
+        stratify: Whether to split separately per label and source.
 
     Returns:
         Train, validation, and test examples.
@@ -58,7 +58,7 @@ def split_examples(
     groups: dict[int, list[PromptRiskExample]] = defaultdict(list)
     if stratify:
         for example in examples:
-            groups[example["label"]].append(example)
+            groups[(example["label"], example["source"])].append(example)
     else:
         groups[0] = list(examples)
 
