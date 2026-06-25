@@ -47,6 +47,7 @@ def save_prompt_risk_model(model: torch.nn.Module, tokenizer: Any, output_dir: s
     model.save_pretrained(model_output_dir)
     tokenizer.save_pretrained(model_output_dir)
 
+
 class PromptRiskPredictor:
     """Convenience wrapper for prompt-risk probability prediction."""
 
@@ -78,7 +79,7 @@ class PromptRiskPredictor:
         model_name_or_path: str | Path,
         max_length: int = 128,
         device: str | torch.device = "cpu",
-    ) -> "PromptRiskPredictor":
+    ) -> PromptRiskPredictor:
         """Load a predictor from a Hugging Face model name or local model directory.
 
         Args:
@@ -129,6 +130,40 @@ class PromptRiskPredictor:
             probabilities = torch.softmax(outputs.logits, dim=-1)
 
         return float(probabilities[0, 1].detach().cpu())
+
+    def predict_proba_batch(self, prompts: list[str]) -> list[float]:
+        """Predict risky-class probabilities for many prompts in one forward pass.
+
+        Equivalent to calling :meth:`predict_proba` on each prompt — padding is
+        ignored via the attention mask, so per-prompt probabilities are
+        independent of batch composition. Padding is dynamic (to the longest
+        sequence in the batch, capped at ``max_length``) rather than a fixed
+        ``max_length``, so short coalition texts are not padded out to 128
+        tokens — this is what makes the batched pass cheaper than the loop.
+
+        Args:
+            prompts: Input prompt texts.
+
+        Returns:
+            Probability assigned to the risky class for each prompt, in order.
+        """
+        if not prompts:
+            return []
+
+        inputs = self.tokenizer(
+            prompts,
+            truncation=True,
+            padding="longest",
+            max_length=self.max_length,
+            return_tensors="pt",
+        )
+        inputs = {key: value.to(self.device) for key, value in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            probabilities = torch.softmax(outputs.logits, dim=-1)
+
+        return probabilities[:, 1].detach().cpu().tolist()
 
     def __call__(self, prompt: str) -> float:
         """Predict the risky-class probability for a prompt.

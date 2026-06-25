@@ -3,7 +3,6 @@
 from types import SimpleNamespace
 
 import torch
-
 from shapiq_attribution.model import PromptRiskPredictor
 
 

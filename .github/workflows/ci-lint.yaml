@@ -1,4 +1,4 @@
-name: ci-train
+name: ci-lint
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: ["main"]
 
 jobs:
-  test-and-build-train:
+  lint:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run training-slice tests
-        run: uv run pytest tests/test_data.py tests/test_split_data.py tests/test_model.py tests/test_train.py
+      - name: Ruff lint
+        run: uv run ruff check .
 
-      - name: Build training image
-        run: docker build -t shapiq-train:latest . -f dockerfiles/train.dockerfile --progress=plain
+      - name: Ruff format check
+        run: uv run ruff format --check .

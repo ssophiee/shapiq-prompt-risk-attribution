@@ -129,9 +129,7 @@ class AttributeRequest(BaseModel):
 
     prompt: str = Field(..., min_length=1, description="Prompt text to explain.")
     budget: int = Field(256, ge=8, le=2048, description="KernelSHAPIQ coalition budget.")
-    top_interactions: int = Field(
-        5, ge=0, le=50, description="Number of strongest pairwise interactions to return."
-    )
+    top_interactions: int = Field(5, ge=0, le=50, description="Number of strongest pairwise interactions to return.")
 
 
 class WordAttribution(BaseModel):
@@ -211,8 +209,7 @@ def attribute(request: AttributeRequest, predictor: PredictorDep) -> AttributeRe
     sii = run_safety_shapiq(game, budget=request.budget)
     word_sv, word_names = aggregate_to_words(sii, game.token_names)
     words = [
-        WordAttribution(word=name, shapley_value=float(word_sv[(index,)]))
-        for index, name in enumerate(word_names)
+        WordAttribution(word=name, shapley_value=float(word_sv[(index,)])) for index, name in enumerate(word_names)
     ]
 
     token_names = game.token_names

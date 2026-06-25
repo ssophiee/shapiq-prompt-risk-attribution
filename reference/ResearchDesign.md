@@ -27,7 +27,7 @@ The architecture has two stages:
 
 This is the pattern from [shapiq's `language_model_game` notebook](https://github.com/mmschlk/shapiq) — the `SentimentClassificationGame` adapted for safety classification.
 
-**Why tokens as players?**  
+**Why tokens as players?**
 CoT steps were a natural unit when attributing LLM reasoning chains, but the bottleneck was `2^n` full LLM forward passes per prompt. Tokens as players with a small DistilBERT classifier are orders of magnitude cheaper, and the result is more directly interpretable: *specific words and phrases* that trigger the unsafe classification.
 
 ---

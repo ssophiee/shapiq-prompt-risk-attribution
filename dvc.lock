@@ -78,7 +78,7 @@ stages:
       md5: b025ac0f6d92e2608a4338d5297b3272
       size: 441
   prepare_dataset:
-    cmd: uv run python -m shapiq_attribution.data build-dataset --raw-dir 
+    cmd: uv run python -m shapiq_attribution.data build-dataset --raw-dir
       data/raw --output-path data/processed/prompt_risk_dataset.jsonl
     deps:
     - path: data/raw

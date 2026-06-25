@@ -99,6 +99,7 @@ def test_prompt_risk_dataset_returns_examples(tmp_path) -> None:
     assert len(dataset) == 1
     assert dataset[0] == examples[0]
 
+
 def test_build_prompt_risk_dataset_combines_raw_snapshots(tmp_path) -> None:
     """Test building the processed dataset from raw snapshots."""
     from shapiq_attribution.data import build_prompt_risk_dataset
@@ -120,12 +121,12 @@ def test_build_prompt_risk_dataset_combines_raw_snapshots(tmp_path) -> None:
     )
 
     write_prompt_risk_jsonl(
-    [make_prompt_risk_example(prompt="toxic risky", label=1, source="toxicchat")],
-    raw_dir / "toxicchat.jsonl",
-    )   
+        [make_prompt_risk_example(prompt="toxic risky", label=1, source="toxicchat")],
+        raw_dir / "toxicchat.jsonl",
+    )
     write_prompt_risk_jsonl(
-    [make_prompt_risk_example(prompt="beaver safe", label=0, source="beavertails")],
-    raw_dir / "beavertails.jsonl",
+        [make_prompt_risk_example(prompt="beaver safe", label=0, source="beavertails")],
+        raw_dir / "beavertails.jsonl",
     )
 
     build_prompt_risk_dataset(raw_dir=raw_dir, output_path=output_path)

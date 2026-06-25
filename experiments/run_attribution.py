@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 
-import numpy as np
-
-import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Token-level safety attribution over a prompt dataset")
@@ -87,7 +87,8 @@ def attribute_prompt(
 
     pairs = [
         {"tokens": [token_names[i], token_names[j]], "indices": [i, j], "value": float(sii[(i, j)])}
-        for i in range(n) for j in range(i + 1, n)
+        for i in range(n)
+        for j in range(i + 1, n)
     ]
     top_interactions = sorted(pairs, key=lambda x: abs(x["value"]), reverse=True)[:5]
 
@@ -110,6 +111,7 @@ def run(args: argparse.Namespace) -> list[dict]:
 
     if args.backend == "distilbert":
         from src.shapiq_attribution.model import PromptRiskPredictor
+
         predictor = PromptRiskPredictor.from_pretrained(args.model_path)
     else:
         # llama_guard: SafetyAnalysisGame loads the model itself via model_name
@@ -120,6 +122,7 @@ def run(args: argparse.Namespace) -> list[dict]:
     wb_run = None
     if not args.no_wandb:
         import wandb
+
         wb_run = wandb.init(project=args.wandb_project, config=vars(args))
 
     results = []
@@ -132,13 +135,15 @@ def run(args: argparse.Namespace) -> list[dict]:
         out_path.write_text(json.dumps(result, indent=2))
 
         if wb_run is not None:
-            wb_run.log({
-                "sample_idx": i,
-                "prompt": prompt,
-                "p_risky": result["p_risky"],
-                "top_3_tokens": str(result["top_3_tokens"]),
-                "budget": args.budget,
-            })
+            wb_run.log(
+                {
+                    "sample_idx": i,
+                    "prompt": prompt,
+                    "p_risky": result["p_risky"],
+                    "top_3_tokens": str(result["top_3_tokens"]),
+                    "budget": args.budget,
+                }
+            )
 
     if wb_run is not None:
         wb_run.finish()

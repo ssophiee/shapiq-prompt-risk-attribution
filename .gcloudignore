@@ -1,0 +1,31 @@
+# Controls what `gcloud run deploy --source .` uploads to Cloud Build.
+#
+# IMPORTANT: as soon as this file exists, gcloud STOPS falling back to .gitignore.
+# That is exactly why we need it: models/ is DVC-tracked and gitignored, so
+# without this file the model would never reach Cloud Build and the Dockerfile
+# COPY would fail. Here we upload only what the Docker build actually needs.
+
+# Heavy / irrelevant directories the build never COPYs.
+.git/
+.gitignore
+.dvc/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+wandb/
+outputs/
+multirun/
+data/
+reports/
+docs/
+notebooks/
+tests/
+.github/
+
+# models/ is gitignored upstream; re-include ONLY the served checkpoint.
+# `models/*` excludes its contents but not the dir itself, so the negation works.
+models/*
+!models/prompt_risk_distilbert/

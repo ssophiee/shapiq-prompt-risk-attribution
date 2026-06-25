@@ -1,0 +1,47 @@
+# Local quality gate. Install the hooks once with:
+#   uv run pre-commit install --install-hooks
+#   uv run pre-commit install --hook-type pre-push
+#
+# - On commit: basic file checks + ruff lint (auto-fix) + ruff format.
+# - On push:   the fast offline test subset (no model/network needed).
+#
+# ruff and pytest are run via `uv run` so they use the exact versions pinned in
+# the dev dependency group — matching CI and avoiding a second ruff install.
+
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (lint + autofix)
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff (format)
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: pytest-fast
+        name: pytest (fast offline subset)
+        entry: uv run pytest tests/ -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

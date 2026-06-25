@@ -8,7 +8,11 @@ __pycache__
 wandb
 outputs
 multirun
-models
+# Keep the served checkpoint so the Cloud Run image (root Dockerfile) can bake it
+# in; everything else under models/ stays out. The local api/train images don't
+# COPY models, so they're unaffected aside from a slightly larger build context.
+models/*
+!models/prompt_risk_distilbert
 reports
 data
 docs/build

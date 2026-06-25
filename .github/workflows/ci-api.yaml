@@ -26,13 +26,11 @@ jobs:
         run: uv sync --frozen
 
       - name: Run serving-slice tests with coverage
-        # The two `attribute_prompt` integration tests load the gated
-        # meta-llama/Llama-Guard-3-1B model and need HF auth, so they are
-        # deselected here; the argparse CLI tests still run.
+        # The attribute_prompt tests use a fake tokenizer + faked predictor, so
+        # the whole serving slice runs offline without model weights or HF auth.
         run: |
           uv run coverage run -m pytest \
-            tests/test_api.py tests/test_monitoring.py tests/test_experiments.py \
-            -k "not attribute_prompt"
+            tests/test_api.py tests/test_monitoring.py tests/test_experiments.py
           uv run coverage report -m -i
           uv run coverage xml -i
 

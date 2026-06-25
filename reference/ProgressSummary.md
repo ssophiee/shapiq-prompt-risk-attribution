@@ -190,7 +190,7 @@ No Hydra; config is simple and flat. Tested via `tests/test_experiments.py` with
 
 | # | Task | MLOps angle | Status |
 |---|---|---|---|
-| B3.1 | Define feature schema | `monitoring.extract_features` → `prompt_len`, `token_count`, `p_risky`; `/predict` calls `log_prediction` (best-effort, wrapped in try/except) → `data/monitoring/predictions.csv`; mounted as a docker-compose volume | ✅ Done |
+| B3.1 | Define feature schema | `monitoring.extract_features` → `prompt_len`, `token_count`, `p_risky`; both `/predict` and `/attribute` call `log_prediction` (best-effort, wrapped in try/except) → `data/monitoring/predictions.csv`; mounted as a docker-compose volume | ✅ Done |
 | B3.2 | Baseline snapshot | `build_baseline` runs the predictor over `data/processed/train.jsonl` → `data/monitoring/baseline.csv`; `inv build-baseline` / `... monitoring baseline` CLI; gitignored + DVC-tracked | ✅ Done |
 | B3.3 | Evidently drift report | `generate_report` builds `Report([DataDriftPreset(), ...])` (Evidently 0.7) over numerical columns → `reports/monitoring/drift_report.html`; verified end-to-end on real DistilBERT baseline | ✅ Done |
 | B3.4 | P(risky) health check | `MeanValue(column="p_risky", tests=[gte(0.2), lte(0.8)])` with `include_tests=True`; fails if the live mean collapses out of band | ✅ Done |

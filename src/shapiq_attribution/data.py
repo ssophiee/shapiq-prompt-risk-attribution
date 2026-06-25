@@ -262,6 +262,7 @@ def load_wildguard(token: str, split: str = "test") -> list[dict[str, Any]]:
     ds = load_dataset(WILDGUARD_DATASET, WILDGUARD_CONFIG, token=token)
     return list(ds[split])
 
+
 def load_wildguard_prompts(token: str | None = None, max_samples: int | None = None) -> list[PromptRiskExample]:
     """Load WildGuardMix prompt examples with harmful and unharmful labels."""
     rows = load_dataset(WILDGUARD_DATASET, "wildguardtrain", split="train", token=token)
@@ -357,31 +358,31 @@ def prepare_raw_snapshots(
     output_path = Path(output_dir)
     token = hf_token or os.environ.get("HF_TOKEN")
     snapshots = {
-    "advbench": (
-        load_advbench(token=token, max_samples=max_samples_per_source),
-        output_path / "advbench.jsonl",
-    ),
-    "harmbench": (
-        load_harmbench(token=token, max_samples=max_samples_per_source),
-        output_path / "harmbench.jsonl",
-    ),
-    "wildguard": (
-        load_wildguard_prompts(token=token, max_samples=25000),
-        output_path / "wildguard.jsonl",
-    ),
-    "toxicchat": (
-        load_toxic_chat(token=token, max_samples=10000),
-        output_path / "toxicchat.jsonl",
-    ),
-    "beavertails": (
-        load_beavertails(token=token, max_samples=12000),
-        output_path / "beavertails.jsonl",
-    ),
-    "xstest": (
-        load_xstest(token=token),
-        output_path / "xstest_eval.jsonl",
-    ),
-        }
+        "advbench": (
+            load_advbench(token=token, max_samples=max_samples_per_source),
+            output_path / "advbench.jsonl",
+        ),
+        "harmbench": (
+            load_harmbench(token=token, max_samples=max_samples_per_source),
+            output_path / "harmbench.jsonl",
+        ),
+        "wildguard": (
+            load_wildguard_prompts(token=token, max_samples=25000),
+            output_path / "wildguard.jsonl",
+        ),
+        "toxicchat": (
+            load_toxic_chat(token=token, max_samples=10000),
+            output_path / "toxicchat.jsonl",
+        ),
+        "beavertails": (
+            load_beavertails(token=token, max_samples=12000),
+            output_path / "beavertails.jsonl",
+        ),
+        "xstest": (
+            load_xstest(token=token),
+            output_path / "xstest_eval.jsonl",
+        ),
+    }
     written_paths = {}
     for source, (examples, path) in snapshots.items():
         write_prompt_risk_jsonl(examples, path)
@@ -408,6 +409,7 @@ def main(
     )
     for source, path in written_paths.items():
         print(f"{source}: {path}")
+
 
 def build_prompt_risk_dataset(raw_dir: str | Path, output_path: str | Path) -> None:
     """Build the processed prompt-risk dataset from local raw JSONL snapshots.
@@ -461,6 +463,7 @@ def cli() -> None:
     elif args.command == "build-dataset":
         build_prompt_risk_dataset(raw_dir=args.raw_dir, output_path=args.output_path)
 
+
 class PromptRiskDataset(Dataset):
     """Torch dataset backed by a normalized prompt-risk JSONL file."""
 
@@ -513,6 +516,7 @@ class PromptRiskTextDataset(Dataset):
         item = {key: value.squeeze(0) for key, value in encoded.items()}
         item["labels"] = torch.tensor(example["label"], dtype=torch.long)
         return item
+
 
 if __name__ == "__main__":
     cli()

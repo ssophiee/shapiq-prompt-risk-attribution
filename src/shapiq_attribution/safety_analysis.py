@@ -163,13 +163,18 @@ class SafetyAnalysisGame(shapiq.Game):
         return np.array(scores, dtype=float)
 
     def _call_distilbert(self, texts: list[str]) -> np.ndarray:
-        """Return P(unsafe) for a batch of texts via PromptRiskPredictor."""
-        return np.array([self._predictor.predict_proba(t) for t in texts], dtype=float)
+        """Return P(unsafe) for a batch of texts via PromptRiskPredictor.
+
+        Runs all coalition texts through a single padded forward pass instead of
+        one call per text; per-text probabilities are unchanged (padding is masked).
+        """
+        return np.array(self._predictor.predict_proba_batch(texts), dtype=float)
 
 
 # ------------------------------------------------------------------
 # Word-level aggregation
 # ------------------------------------------------------------------
+
 
 def aggregate_to_words(
     sv: shapiq.InteractionValues,
@@ -225,10 +230,7 @@ def aggregate_to_words(
             return token[2:]
         return token
 
-    word_names = [
-        "".join(_strip_prefix(token_names[i]) for i in grp)
-        for grp in word_groups
-    ]
+    word_names = ["".join(_strip_prefix(token_names[i]) for i in grp) for grp in word_groups]
     n_words = len(word_groups)
 
     # Build values array expected by InteractionValues for SV (min_order=0,
