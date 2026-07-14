@@ -50,6 +50,18 @@ dev = [
     "mkdocstrings-python==2.0.1",
 ]
 
+# CPU-only torch on Linux: the default PyPI wheel drags in ~7 GB of CUDA
+# libraries (nvidia-*, triton) that the CPU-only containers never use — enough
+# to blow the disk on GitHub Actions runners. macOS wheels are CPU/MPS anyway.
+# (If GPU training in docker is ever needed again, drop this source override.)
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.ruff]
 line-length = 120
 lint.select = ["I", "E", "F", "B", "UP"]
