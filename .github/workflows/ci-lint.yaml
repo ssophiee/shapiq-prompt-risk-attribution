@@ -1,4 +1,4 @@
-name: ci-lint
+name: CI Tests
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 jobs:
   lint:
+    name: Code Quality Checks
     runs-on: ubuntu-latest
 
     steps:
