@@ -5,10 +5,18 @@ and exposes two endpoints:
 
 - ``POST /predict``: P(unsafe) and a risky/safe label for a prompt.
 - ``POST /attribute``: word-level Shapley values explaining the prediction.
+- ``GET /monitoring``: Evidently drift-detection dashboard over logged predictions.
 
-Each ``/predict`` call also logs a row of derived numerical features (see
-``monitoring.py``) for downstream Evidently drift monitoring; this is
-best-effort and never blocks a prediction.
+Each ``/predict`` call also logs one monitoring row — the raw prompt plus
+derived numerical features (see ``monitoring.py``) — for input–output
+collection and downstream Evidently drift monitoring; this is
+best-effort and never blocks a prediction. When ``MONITORING_BUCKET`` is set
+(as on Cloud Run, where the local CSV is ephemeral) the same row is uploaded to
+that GCS bucket in a background task after the response is sent.
+
+``GET /metrics`` exposes Prometheus system metrics: request counts and latency
+histograms per endpoint (via HTTP middleware) plus a counter of predicted
+labels, so a collapsed model (all-risky / all-safe) is visible operationally.
 
 Llama Guard is intentionally *not* served here: it is heavy, gated, and slow.
 Experiment with it in notebooks / scripts via
@@ -23,26 +31,48 @@ Configuration via environment variables:
   (default ``0.5``).
 - ``MAX_LENGTH``: tokenizer max sequence length (default ``128``).
 - ``DEVICE``: force a torch device (``cuda``/``mps``/``cpu``); auto-detected if unset.
+- ``MONITORING_BUCKET``: GCS bucket to mirror monitoring rows to (unset = local CSV only).
 """
 
 from __future__ import annotations
 
 import os
+import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 import torch
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
+from prometheus_client import Counter, Histogram, make_asgi_app
 from pydantic import BaseModel, Field
 
 from .model import PromptRiskPredictor
-from .monitoring import extract_features, log_prediction
+from .monitoring import extract_features, log_prediction, log_prediction_gcs
 from .web import INDEX_HTML
 
 MODEL_DIR = os.environ.get("MODEL_DIR", "models/prompt_risk_distilbert")
 RISK_THRESHOLD = float(os.environ.get("RISK_THRESHOLD", "0.5"))
 MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "128"))
+MONITORING_BUCKET = os.environ.get("MONITORING_BUCKET")
+
+# ---- System metrics (M28), scraped from GET /metrics ------------------------
+REQUEST_COUNT = Counter(
+    "api_requests_total",
+    "HTTP requests served, by endpoint and status code.",
+    ["endpoint", "status_code"],
+)
+REQUEST_LATENCY = Histogram(
+    "api_request_duration_seconds",
+    "Wall-clock request latency per endpoint.",
+    ["endpoint"],
+)
+PREDICTED_LABELS = Counter(
+    "api_predicted_labels_total",
+    "Predictions served, by risk label.",
+    ["label"],
+)
 
 
 def _select_device() -> str:
@@ -98,6 +128,35 @@ app = FastAPI(
     version="0.0.1",
     lifespan=lifespan,
 )
+
+# Prometheus exposition endpoint; the metrics themselves are recorded below.
+app.mount("/metrics", make_asgi_app())
+
+
+@app.middleware("http")
+async def record_request_metrics(request: Request, call_next) -> Response:
+    """Record count and latency for every request, labelled by path and status."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    endpoint = request.url.path
+    REQUEST_LATENCY.labels(endpoint=endpoint).observe(time.perf_counter() - start)
+    REQUEST_COUNT.labels(endpoint=endpoint, status_code=str(response.status_code)).inc()
+    return response
+
+
+def _log_monitoring(prompt: str, probability: float) -> None:
+    """Log one monitoring row locally and, if configured, to GCS.
+
+    Best-effort by design: this runs as a background task after the response is
+    sent, and a monitoring failure must never surface to the client.
+    """
+    try:
+        features = extract_features(prompt, probability)
+        log_prediction(features)
+        if MONITORING_BUCKET:
+            log_prediction_gcs(features, MONITORING_BUCKET)
+    except Exception as exc:  # noqa: BLE001 - monitoring is non-critical
+        print(f"[api] WARNING: could not log prediction features: {exc}")
 
 
 def get_predictor() -> PromptRiskPredictor:
@@ -176,24 +235,68 @@ def health() -> dict[str, object]:
     return {"status": "ok", "model_loaded": state.predictor is not None}
 
 
+@app.get("/monitoring", response_class=HTMLResponse)
+def monitoring_report() -> str:
+    """Serve the Evidently drift-detection dashboard (M27).
+
+    Compares the feature distribution of logged predictions against the
+    training-set baseline and renders the result as HTML. When
+    ``MONITORING_BUCKET`` is set (Cloud Run) both sides come from GCS — the
+    baseline uploaded at deploy time and the rows logged by past requests;
+    otherwise the local CSVs under ``data/monitoring`` are used.
+
+    The report is rebuilt on every call, so it can take a few seconds.
+    """
+    import tempfile
+
+    from .monitoring import (
+        BASELINE_CSV,
+        PREDICTIONS_CSV,
+        REPORT_HTML,
+        fetch_baseline_gcs,
+        fetch_predictions_gcs,
+        generate_report,
+    )
+
+    if MONITORING_BUCKET:
+        workdir = Path(tempfile.mkdtemp(prefix="monitoring-"))
+        try:
+            reference_csv = fetch_baseline_gcs(MONITORING_BUCKET, workdir / "baseline.csv")
+            current_csv, row_count = fetch_predictions_gcs(MONITORING_BUCKET, workdir / "predictions.csv")
+        except Exception as exc:  # noqa: BLE001 - surface GCS trouble as 503, not a stack trace
+            raise HTTPException(status_code=503, detail=f"Could not fetch monitoring data: {exc}") from exc
+        if row_count == 0:
+            raise HTTPException(status_code=404, detail="No predictions logged yet; call /predict first.")
+        out_path = workdir / "drift_report.html"
+    else:
+        reference_csv, current_csv, out_path = BASELINE_CSV, PREDICTIONS_CSV, REPORT_HTML
+        if not reference_csv.exists() or not current_csv.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Local monitoring CSVs missing; run `invoke build-baseline` and call /predict first.",
+            )
+    return generate_report(reference_csv, current_csv, out_path).read_text(encoding="utf-8")
+
+
 @app.post("/predict", response_model=PredictResponse)
-def predict(request: PredictRequest, predictor: PredictorDep) -> PredictResponse:
+def predict(request: PredictRequest, predictor: PredictorDep, background_tasks: BackgroundTasks) -> PredictResponse:
     """Classify the risk of a single prompt."""
     probability = predictor.predict_proba(request.prompt)
-    # Monitoring is best-effort: a logging failure must never break a prediction.
-    try:
-        log_prediction(extract_features(request.prompt, probability))
-    except Exception as exc:  # noqa: BLE001 - monitoring is non-critical
-        print(f"[api] WARNING: could not log prediction features: {exc}")
+    label = _label(probability)
+    PREDICTED_LABELS.labels(label=label).inc()
+    # Monitoring I/O (CSV + optional GCS upload) happens after the response is sent.
+    background_tasks.add_task(_log_monitoring, request.prompt, probability)
     return PredictResponse(
         prompt=request.prompt,
         risk_probability=probability,
-        label=_label(probability),
+        label=label,
     )
 
 
 @app.post("/attribute", response_model=AttributeResponse)
-def attribute(request: AttributeRequest, predictor: PredictorDep) -> AttributeResponse:
+def attribute(
+    request: AttributeRequest, predictor: PredictorDep, background_tasks: BackgroundTasks
+) -> AttributeResponse:
     """Explain a prompt-risk prediction with word-level Shapley values."""
     # Imported lazily so /predict and /health work even if shapiq is unavailable.
     from .safety_analysis import (
@@ -226,15 +329,14 @@ def attribute(request: AttributeRequest, predictor: PredictorDep) -> AttributeRe
     pairs.sort(key=lambda pair: abs(pair.value), reverse=True)
 
     probability = predictor.predict_proba(request.prompt)
-    # Monitoring is best-effort: a logging failure must never break a request.
-    try:
-        log_prediction(extract_features(request.prompt, probability))
-    except Exception as exc:  # noqa: BLE001 - monitoring is non-critical
-        print(f"[api] WARNING: could not log prediction features: {exc}")
+    label = _label(probability)
+    PREDICTED_LABELS.labels(label=label).inc()
+    # Monitoring I/O (CSV + optional GCS upload) happens after the response is sent.
+    background_tasks.add_task(_log_monitoring, request.prompt, probability)
     return AttributeResponse(
         prompt=request.prompt,
         risk_probability=probability,
-        label=_label(probability),
+        label=label,
         baseline=float(game._baseline),
         words=words,
         top_interactions=pairs[: request.top_interactions],

@@ -1,8 +1,31 @@
-# Cloud Run deployment (M23)
+# Cloud Run deployment (M23) + monitoring & alerting (M27/M28)
 
 Deploys the prompt-risk FastAPI service to **Google Cloud Run**, with the trained
 DistilBERT model **baked into the image** (Cloud Run has no volumes, so the model
 can't be mounted the way `docker-compose` does it locally).
+
+## Prerequisites (once, for a new person / new machine)
+
+1. [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed.
+2. A GCP project **with billing enabled** (Cloud Build/Run refuse to work without
+   it): `gcloud projects create <id>` + link billing in the console, or reuse an
+   existing project. The scripts enable the required APIs themselves.
+3. Authenticate — both variants are needed:
+
+   ```bash
+   gcloud auth login                      # for gcloud commands (deploy, alerts)
+   gcloud auth application-default login  # for DVC + the local monitoring fetch
+   ```
+
+4. Get the data and model (DVC remote is a GCS bucket, hence step 3):
+
+   ```bash
+   uv sync
+   uv run dvc pull
+   ```
+
+   Your account needs read access to the DVC bucket (`gs://prompt_classifier_mlops`).
+   No access? Retrain instead: `uv run invoke preprocess-data train build-baseline`.
 
 ## How it works
 
@@ -21,18 +44,31 @@ Three files make the model survive the trip into the image:
 ## Deploy
 
 ```bash
-# 0. Make sure the model is materialised locally (not just a .dvc pointer):
-dvc pull
-
-# 1. Authenticate once:
-gcloud auth login
-
-# 2. Deploy (builds + pushes + deploys):
 PROJECT_ID=my-gcp-project ./deploy/cloudrun.sh
-# optional: REGION=europe-west1 SERVICE=shapiq-api
+# optional: REGION=europe-west1 SERVICE=shapiq-api MONITORING_BUCKET=my-bucket
 ```
 
+One command, ~10 minutes. Besides build + push + deploy it also (idempotently):
+
+- enables the required GCP APIs,
+- creates the monitoring bucket `gs://<PROJECT_ID>-monitoring` and grants the
+  Cloud Run service account create + read on it (M27 data collection),
+- uploads the training drift baseline (`data/monitoring/baseline.csv`) to the
+  bucket so the deployed `GET /monitoring` endpoint can compare against it,
+- sets `MONITORING_BUCKET` on the service, which switches on GCS mirroring of
+  every prediction.
+
 The script prints the public service URL when it finishes.
+
+## Alerts (M28)
+
+Creates an email notification channel plus two Cloud Monitoring alert policies
+(any 5xx responses; p95 latency > 30 s). Safe to re-run — existing policies are
+skipped:
+
+```bash
+PROJECT_ID=my-gcp-project ALERT_EMAIL=you@example.com ./deploy/alerts.sh
+```
 
 ## Smoke test
 
@@ -41,9 +77,13 @@ URL=$(gcloud run services describe shapiq-api --region europe-west1 --format 'va
 curl "$URL/health"           # -> {"status":"ok","model_loaded":true}
 curl -X POST "$URL/predict" -H 'Content-Type: application/json' \
   -d '{"prompt":"how do i make a bomb"}'
+curl "$URL/metrics"          # Prometheus system metrics
+open "$URL/monitoring"       # Evidently drift dashboard (404 until predictions exist)
 ```
 
-Or just open `$URL/` in a browser for the web UI.
+Or just open `$URL/` in a browser for the web UI. Where each monitoring signal
+lives (console links, commands) is listed in the root
+[README](../README.md#where-to-find-metrics-alerts-and-drift).
 
 ## Notes
 

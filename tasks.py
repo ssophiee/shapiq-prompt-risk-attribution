@@ -56,6 +56,24 @@ def monitor_report(ctx: Context) -> None:
 
 
 @task
+def monitor_fetch(ctx: Context, bucket: str = "") -> None:
+    """Download the deployed API's prediction rows from GCS into the local CSV."""
+    bucket_arg = f" --bucket {bucket}" if bucket else ""
+    ctx.run(
+        f"uv run python -m shapiq_attribution.monitoring fetch{bucket_arg}",
+        echo=True,
+        pty=not WINDOWS,
+    )
+
+
+@task
+def monitor_report_cloud(ctx: Context, bucket: str = "") -> None:
+    """Fetch deployed-API predictions from GCS, then build the drift report."""
+    monitor_fetch(ctx, bucket=bucket)
+    monitor_report(ctx)
+
+
+@task
 def docker_build_train(ctx: Context, progress: str = "plain") -> None:
     """Build the training Docker image."""
     ctx.run(
