@@ -73,7 +73,8 @@ will check the repositories and the code to verify your answers.
 * [x] Use Weights & Biases to log training progress and other important metrics/artifacts in your code (M14)
 * [x] Consider running a hyperparameter optimization sweep (M14)
     * *W&B Bayesian sweep over the DistilBERT hyperparameters, maximising `val/roc_auc` (`configs/sweep.yaml`).*
-* [ ] Use PyTorch-lightning (if applicable) to reduce the amount of boilerplate in your code (M15)
+* [x] Use PyTorch-lightning (if applicable) to reduce the amount of boilerplate in your code (M15)
+    * *Training refactored into a `LightningModule` + `LightningDataModule` (`lightning_module.py`, `lightning_data_module.py`); `train.py` drives `lightning.Trainer`.*
 
 ### Week 2
 
@@ -114,7 +115,8 @@ will check the repositories and the code to verify your answers.
 * [x] Create one or more alert systems in GCP to alert you if your app is not behaving correctly (M28)
     * *Two Cloud Monitoring alert policies → email (`deploy/alerts.sh`): any 5xx responses within a 5-minute window, and p95 latency above 30 s (deliberately high — `/attribute` legitimately takes tens of seconds).*
 * [ ] If applicable, optimize the performance of your data loading using distributed data loading (M29)
-* [ ] If applicable, optimize the performance of your training pipeline by using distributed training (M30)
+* [x] If applicable, optimize the performance of your training pipeline by using distributed training (M30)
+    * *DDP support via Lightning + Hydra hardware configs (`configs/hardware/{local,single_gpu,ddp}.yaml`) selecting accelerator/devices/strategy.*
 * [ ] Play around with quantization, compilation and pruning for you trained models to increase inference speed (M31)
 
 ### Extra
@@ -181,7 +183,7 @@ We used three third-party packages not covered in the course. The most central o
 >
 > Answer:
 
-We used `uv` to manage our dependencies. Runtime dependencies are declared in `pyproject.toml`, with development tools (pytest, ruff, mypy, pre-commit, mkdocs, ...) separated into a `dev` dependency group. The exact resolved versions are in the committed `uv.lock` file, and `.python-version` pins the interpreter to Python 3.13, so every machine resolves to an identical environment. We also used a `[tool.uv.sources]` override that installs CPU-only PyTorch wheels on Linux, keeping Docker images and CI runners ~7 GB slimmer. A new team member would run:
+We used `uv` to manage our dependencies. Runtime dependencies are declared in `pyproject.toml`, with development tools (pytest, ruff, mypy, pre-commit, mkdocs, ...) separated into a `dev` dependency group. The exact resolved versions are in the committed `uv.lock` file, and `.python-version` pins the interpreter to Python 3.13, so every machine resolves to an identical environment. PyTorch is selected through optional extras: containers and CI install with `--extra cpu` (CPU-only wheels, keeping images ~7 GB slimmer), while the GPU training image uses `--extra cu124`, with `[tool.uv.sources]` mapping each extra to the right PyTorch index. A new team member would run:
 
 ```bash
 git clone <repo-url> && cd shapiq-cot-attribution
@@ -242,7 +244,7 @@ These concepts are important as a project and team grow. A shared format keeps t
 >
 > Answer:
 
-In total we have implemented 77 tests across 11 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, data splitting, and training helpers.
+In total we have implemented 84 tests across 11 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, data splitting, and the Lightning training setup including an end-to-end trainer run on a tiny dataset.
 
 ### Question 8
 
