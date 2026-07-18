@@ -18,7 +18,7 @@ shapiq-prompt-risk-attribution/
 │   ├── monitoring.py            # drift baseline, row collection, Evidently report
 │   ├── pipeline.py              # natural-reasoning CoT attribution (research)
 │   └── visualize.py             # attribution plots
-├── tests/                       # 90 offline tests (stubbed models/tokenizers)
+├── tests/                       # 93 offline tests (stubbed models/tokenizers)
 ├── configs/                     # Hydra configs: train.yaml, sweep.yaml, hardware/
 ├── data/                        # DVC-tracked (raw snapshots, processed dataset)
 ├── models/                      # DVC-tracked trained model

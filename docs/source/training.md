@@ -84,6 +84,31 @@ snapshots are tracked via `data/raw.dvc`; processed data, the served model
 and metrics are pipeline outputs declared in `dvc.yaml` and recorded in
 `dvc.lock`.
 
+## Continuous data checks
+
+The `cml-data` GitHub Actions workflow follows the course's continuous
+machine-learning pattern. Pushes and pull requests that change `.dvc` files,
+the `.dvc/` configuration, `dvc.yaml` or `dvc.lock` trigger the workflow. It:
+
+1. authenticates to GCP with the `GCP_SA_KEY` repository secret;
+2. pulls the DVC-tracked raw snapshots from Cloud Storage;
+3. reproduces normalization and deterministic train/validation/test splitting;
+4. runs the data and split tests;
+5. generates a text-only Markdown report with class balance, source balance,
+   duplicates and cross-split overlap checks;
+6. uploads the report as a workflow artifact and updates a CML comment on pull
+   requests.
+
+The same integrity report can be generated locally:
+
+```bash
+uv run python -m shapiq_attribution.data_statistics --check
+```
+
+The command exits with status 1 if the splits do not reconstruct the processed
+dataset, prompts leak between splits, a dataset is empty, or duplicate prompts
+are present.
+
 ## Using the trained classifier from Python
 
 ```python

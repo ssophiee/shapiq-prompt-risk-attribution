@@ -88,7 +88,10 @@ will check the repositories and the code to verify your answers.
 * [ ] Add caching and multi-os/python/pytorch testing to your continuous integration (M17)
 * [x] Add a linting step to your continuous integration (M17)
 * [x] Add pre-commit hooks to your version control setup (M18)
-* [ ] Add a continues workflow that triggers when data changes (M19)
+* [x] Add a continues workflow that triggers when data changes (M19)
+    * *`cml-data.yaml` follows the course CML pattern: DVC metadata changes trigger GCP authentication, raw-data pull,
+      preprocessing/splitting, data tests and a text-only integrity report uploaded as an artifact and posted to pull
+      requests through an updating CML comment.*
 * [ ] Add a continues workflow that triggers when changes to the model registry is made (M19)
 * [x] Create a data storage in GCP Bucket for your data and link this with your data version control setup (M21)
     * *DVC remote on GCS (`gs://prompt_classifier_mlops`) holding the datasets and trained model.*
@@ -258,7 +261,7 @@ These concepts are important as a project and team grow. A shared format keeps t
 >
 > Answer:
 
-In total we have implemented 90 tests across 11 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, data splitting, and the Lightning training setup including profiling, optimized batching and an end-to-end trainer run on a tiny dataset.
+In total we have implemented 93 tests across 12 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, split integrity, continuous-data statistics and the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, and the Lightning training setup including profiling, optimized batching and an end-to-end trainer run on a tiny dataset.
 
 ### Question 8
 

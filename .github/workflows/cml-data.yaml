@@ -1,0 +1,86 @@
+name: cml-data
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**/*.dvc"
+      - ".dvc/**"
+      - "dvc.yaml"
+      - "dvc.lock"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "**/*.dvc"
+      - ".dvc/**"
+      - "dvc.yaml"
+      - "dvc.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: cml-data-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dataset-statistics:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra cpu
+
+      - name: Authenticate with GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Pull DVC-tracked raw data
+        run: uv run dvc pull --no-run-cache data/raw.dvc
+
+      - name: Rebuild processed data and splits
+        run: uv run dvc repro --force split_data
+
+      - name: Run data tests
+        run: uv run pytest tests/test_data.py tests/test_split_data.py tests/test_data_statistics.py
+
+      - name: Generate data statistics
+        id: data-statistics
+        continue-on-error: true
+        run: uv run python -m shapiq_attribution.data_statistics --check > data_statistics.md
+
+      - name: Upload data statistics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-statistics
+          path: data_statistics.md
+          if-no-files-found: error
+
+      - name: Install CML
+        if: always() && github.event_name == 'pull_request'
+        uses: iterative/setup-cml@v2
+
+      - name: Comment data statistics on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cml comment create data_statistics.md --watermark-title="Data Checker"
+
+      - name: Enforce data integrity checks
+        if: steps.data-statistics.outcome == 'failure'
+        run: exit 1
