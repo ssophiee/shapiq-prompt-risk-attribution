@@ -91,7 +91,7 @@ will check the repositories and the code to verify your answers.
     * *DVC remote on GCS (`gs://prompt_classifier_mlops`) holding the datasets and trained model.*
 * [x] Create a trigger workflow for automatically building your docker images (M21)
     * *GitHub Actions (`ci-api.yaml`, `ci-train.yaml`) build the API and training images on every push/PR to `main`.*
-* [ ] Get your model training in GCP using either the Engine or Vertex AI (M21)
+* [x] Get your model training in GCP using either the Engine or Vertex AI (M21)
 * [x] Create a FastAPI application that can do inference using your model (M22)
 * [x] Deploy your model in GCP using either Functions or Run as the backend (M23)
 * [x] Write API tests for your application and setup continues integration for these (M24)
@@ -115,7 +115,7 @@ will check the repositories and the code to verify your answers.
     * *Google Cloud Monitoring over Cloud Run's built-in `request_count` / `request_latencies` metrics for the deployed service.*
 * [x] Create one or more alert systems in GCP to alert you if your app is not behaving correctly (M28)
     * *Two Cloud Monitoring alert policies → email (`deploy/alerts.sh`): any 5xx responses within a 5-minute window, and p95 latency above 30 s (deliberately high — `/attribute` legitimately takes tens of seconds).*
-* [ ] If applicable, optimize the performance of your data loading using distributed data loading (M29)
+* [x] If applicable, optimize the performance of your data loading using distributed data loading (M29)
 * [x] If applicable, optimize the performance of your training pipeline by using distributed training (M30)
     * *DDP support via Lightning + Hydra hardware configs (`configs/hardware/{local,single_gpu,ddp}.yaml`) selecting accelerator/devices/strategy.*
 * [ ] Play around with quantization, compilation and pruning for you trained models to increase inference speed (M31)
@@ -150,7 +150,7 @@ NaN
 > Answer:
 
 - Sofiia Nikolenko (XXXXX)
-- Lennart Lamberts (XXXXX)
+- Lennart Lamberts (12166892)
 
 ### Question 3
 > **Did you end up using any open-source frameworks/packages not covered in the course during your project? If so**
@@ -187,10 +187,10 @@ We used three third-party packages not covered in the course. The most central o
 We used `uv` to manage our dependencies. Runtime dependencies are declared in `pyproject.toml`, with development tools (pytest, ruff, mypy, pre-commit, mkdocs, ...) separated into a `dev` dependency group. The exact resolved versions are in the committed `uv.lock` file, and `.python-version` pins the interpreter to Python 3.13, so every machine resolves to an identical environment. PyTorch is selected through optional extras: containers and CI install with `--extra cpu` (CPU-only wheels, keeping images ~7 GB slimmer), while the GPU training image uses `--extra cu124`, with `[tool.uv.sources]` mapping each extra to the right PyTorch index. A new team member would run:
 
 ```bash
-git clone <repo-url> && cd shapiq-prompt-risk-attribution
-uv sync                                    # creates .venv with exact locked versions (incl. dev group)
-uv run dvc pull                            # fetch DVC-tracked data + trained model from GCS
-uv run pre-commit install --install-hooks  # enable the linting/formatting hooks
+git clone <repo-url> && cd shapiq-cot-attribution
+uv sync --frozen --extra cpu                 # Linux; use uv sync --frozen on macOS
+uv run dvc pull                              # fetch DVC-tracked data + trained model from GCS
+uv run pre-commit install --install-hooks    # enable the linting/formatting hooks
 ```
 
 `uv sync` installs the Python version, creates the virtual environment, and installs everything from the lockfile in one step.
@@ -209,7 +209,17 @@ uv run pre-commit install --install-hooks  # enable the linting/formatting hooks
 >
 > Answer:
 
---- question 5 fill here ---
+We started from the DTU `mlops_template` cookiecutter and retained its main separation of source code, tests, data,
+models, reports, configuration and documentation. We filled `src/shapiq_attribution/` with the dataset acquisition and
+normalization code, DistilBERT model utilities, Lightning training modules, SHAPIQ game and attribution logic, FastAPI
+application, frontend and monitoring. `tests/` contains the corresponding offline unit and API tests. `configs/` holds
+the Hydra training, sweep and hardware profiles, while `data/` and `models/` contain DVC-managed artifacts.
+
+We extended the template with `dockerfiles/` and Docker Compose for CPU/GPU training and serving, `deploy/` for Cloud
+Run and Cloud Monitoring scripts, `.github/workflows/` for CI, `experiments/` for attribution experiments, and a
+MkDocs site in `docs/`. We also added `dvc.yaml`/`dvc.lock`, an embedded web frontend, Locust load tests and separate
+local, single-GPU and DDP hardware configurations. `tasks.py` provides convenient Invoke wrappers around the most
+common workflows.
 
 ### Question 6
 
@@ -294,6 +304,17 @@ In a larger team, branches and pull requests would improve this setup. Branches 
 >
 > Answer:
 
+Yes. DVC versions the artifacts that are too large or too changeable for Git. The configured remote `storage` points
+to `gs://prompt_classifier_mlops`. `data/raw.dvc` tracks the seven downloaded raw snapshots, while `dvc.yaml` defines
+reproducible stages for normalization, stratified splitting and distributed training. `dvc.lock` records hashes for
+the source data, configuration, code dependencies, processed train/validation/test splits, the approximately 256 MB
+DistilBERT model and `reports/metrics.json`.
+
+This improved the project because a Git commit identifies both code and the exact data/model state without checking
+large binaries into Git. A team member can run `uv run dvc pull` to restore the artifacts or `uv run dvc repro` to
+recompute only stages whose dependencies changed. After the successful Vertex AI DDP run, the new model, metrics and
+lock metadata were pushed to GCS. Consequently, experiments, deployment and monitoring can use the same versioned
+classifier and dataset instead of relying on manually copied local files.
 
 ### Question 11
 
@@ -329,7 +350,19 @@ In a larger team, branches and pull requests would improve this setup. Branches 
 >
 > Answer:
 
---- question 12 fill here ---
+We configure training with Hydra. `configs/train.yaml` contains data paths, split seed, model name, hyperparameters,
+checkpointing, W&B and output paths; configuration groups in `configs/hardware/` select local, single-GPU or two-GPU
+DDP execution. A default experiment is:
+
+```bash
+uv run python -m shapiq_attribution.train
+```
+
+Hydra overrides make variants explicit, for example:
+
+```bash
+uv run python -m shapiq_attribution.train hardware=single_gpu training.learning_rate=3e-5 training.batch_size=32
+```
 
 ### Question 13
 
@@ -344,7 +377,17 @@ In a larger team, branches and pull requests would improve this setup. Branches 
 >
 > Answer:
 
---- question 13 fill here ---
+Reproducibility is handled at several layers. `uv.lock` and Python 3.13 fix the software environment. DVC records
+content hashes for raw data, processed splits, code/config dependencies, the trained model and metrics; `dvc pull`
+restores an existing state and `dvc repro` rebuilds it. Hydra keeps every training option in version control and W&B
+receives the fully resolved configuration plus the effective global batch size. We set seed 12 for Python, Lightning
+and dataloader workers and use a seeded stratified train/validation/test split.
+
+Lightning saves the best checkpoint according to validation ROC-AUC, then evaluates that checkpoint on validation and
+test data. W&B logs losses, metrics, learning rate and hyperparameters, while `reports/metrics.json` and the exported
+model are DVC outputs. To reproduce a run, check out its Git commit, run `uv sync --frozen`, `uv run dvc pull`, and
+start training with the recorded Hydra overrides. GPU mixed precision and DDP may still prevent bit-for-bit identical
+floating-point results, but all inputs and decisions are traceable.
 
 ### Question 14
 
@@ -361,7 +404,24 @@ In a larger team, branches and pull requests would improve this setup. Branches 
 >
 > Answer:
 
---- question 14 fill here ---
+<!-- Add 1-3 W&B screenshots here. -->
+
+We integrated Weights & Biases through Lightning's `WandbLogger`. Each run receives the resolved Hydra configuration,
+including data paths, seed, model name, maximum sequence length, optimizer settings, hardware profile and effective
+global batch size. During training we track step- and epoch-level training loss and the AdamW learning rate. On
+validation and test data we log loss, accuracy, precision, recall, F1 and ROC-AUC.
+
+ROC-AUC is the primary model-selection metric because it measures how well risky prompts rank above safe prompts
+across all classification thresholds. This is more useful than accuracy alone when class frequencies or the eventual
+risk threshold change. Loss shows whether optimization is converging and can expose overfitting when training loss
+continues falling while validation loss rises. Precision measures how often a risk warning is justified, whereas
+recall measures how many risky prompts are caught; F1 summarizes that trade-off. Accuracy remains an intuitive overall
+check, and the test metrics are only used for final evaluation. The final DVC-recorded model achieved validation
+ROC-AUC 0.9283 and test ROC-AUC 0.9314, with test accuracy 0.8456 and F1 0.8121.
+
+We also configured a Bayesian W&B sweep with a cap of ten runs. It maximizes `val/roc_auc` while varying learning rate
+(1e-5 to 1e-4), batch size (8, 16, 32), weight decay (0, 0.01, 0.05), maximum token length (64, 128, 256) and two or
+three epochs. This records both successful and weak settings instead of keeping only the final result.
 
 ### Question 15
 
@@ -416,7 +476,14 @@ GitHub Actions rebuilds the training and API images on every push to `main`, and
 >
 > Answer:
 
-We used five GCP services. **Cloud Storage** provides object storage in buckets: one bucket (`gs://prompt_classifier_mlops`) is our DVC remote holding the versioned datasets and the trained model, and a second one collects the input/output rows that the deployed API logs on every prediction, which feed our drift monitoring. **Cloud Run** is a container platform that runs our API image, it hosts the FastAPI service with the frontend, the Prometheus `/metrics` endpoint and the `/monitoring` drift dashboard. **Cloud Build** builds the container image directly from our source in the cloud when we deploy (`gcloud run deploy --source`), so no local docker build or push is needed. **Artifact Registry** stores the built container images that Cloud Run pulls from. Finally, **Cloud Monitoring** collects Cloud Run's request count and latency metrics and runs our two alert policies, emailing us on any 5xx responses or when p95 latency exceeds 30 s.
+We used eight GCP services. **Cloud Storage** holds the DVC data/model remote and the API's monitoring data.
+**Compute Engine** provided an earlier single-T4 training VM. **Vertex AI Custom Jobs** ran the final two-T4 DDP
+training. **Artifact Registry** stores the GPU training image and the API images. **Cloud Build** builds the Cloud Run
+image from source, and **Cloud Run** serves FastAPI, the frontend, metrics and drift dashboard. **Secret Manager**
+stores the W&B API key used by cloud training without embedding credentials in the image. Finally, **Cloud
+Monitoring** observes Cloud Run request counts and latency and sends email notifications for 5xx errors and excessive
+p95 latency. The storage/training resources are in `mlops-project-work`; the deployed API is in the separate
+`mlops-shapiq-project`.
 
 ### Question 18
 
@@ -431,7 +498,16 @@ We used five GCP services. **Cloud Storage** provides object storage in buckets:
 >
 > Answer:
 
---- question 18 fill here ---
+We used Compute Engine for an earlier GPU training setup in the `mlops-project-work` project. The instance
+`shapiq-train-gpu` was created in `us-west4-a` as an `n1-standard-4` VM (4 vCPUs and 15 GB memory) with one NVIDIA
+Tesla T4, a 200 GB persistent boot disk and Ubuntu 22.04. The CUDA 12.4 training image and the single-GPU Hydra profile
+allowed the same containerized Lightning pipeline used locally to run with mixed precision on this VM. Data and model
+artifacts were exchanged through the DVC GCS remote rather than copied manually.
+
+The VM is now `TERMINATED`, so it does not continue consuming compute resources after training. We did not host the
+API on Compute Engine: serving is handled by Cloud Run, which can scale to zero. After validating the GPU container
+and training flow, we used Vertex AI Custom Jobs for the final distributed run, because Vertex manages job lifecycle
+and provisions the requested multi-GPU worker automatically.
 
 ### Question 19
 
@@ -440,7 +516,12 @@ We used five GCP services. **Cloud Storage** provides object storage in buckets:
 >
 > Answer:
 
---- question 19 fill here ---
+<!-- Add 1-2 screenshots of the GCP buckets here. -->
+
+An authenticated `gcloud storage ls` on 18 July 2026 showed that the DVC bucket contained 39 content-addressed objects
+(1.06 GiB), including raw/processed datasets, model versions, metrics and the final Vertex DDP metadata. The monitoring
+bucket contained the 11.22 MiB training baseline used by Evidently; prediction objects are added by deployed API
+traffic.
 
 ### Question 20
 
@@ -473,7 +554,21 @@ We used five GCP services. **Cloud Storage** provides object storage in buckets:
 >
 > Answer:
 
---- question 22 fill here ---
+Yes. The final model was trained with a Vertex AI Custom Job named `shapiq-ddp-train` in `us-central1`. Vertex pulled
+our custom CUDA 12.4 image from Artifact Registry and provisioned one `n1-standard-16` worker with two NVIDIA Tesla T4
+GPUs and a 100 GB SSD. Inside the container, the entrypoint pulled the versioned train/validation/test splits from the
+DVC GCS remote and ran:
+
+```bash
+python -m shapiq_attribution.train hardware=ddp
+```
+
+The `ddp` Hydra profile selects Lightning's distributed data parallel strategy, two devices and 16-bit mixed
+precision. Successful outputs were committed and pushed back through DVC, and `dvc.lock` plus
+`reports/metrics.json` were uploaded under `vertex-ddp/latest/`. The final job completed successfully on 18 July 2026
+in about nine minutes. We also ran smaller smoke jobs first; their failed/cancelled states helped debug the container
+before the successful runs. W&B credentials for online cloud logging were stored in Secret Manager rather than in
+source code.
 
 ## Deployment
 
@@ -565,7 +660,17 @@ Yes, monitoring works in three layers. First, data collection: every `/predict` 
 >
 > Answer:
 
---- question 27 fill here ---
+The exact credit consumption is not stored in Git, DVC or the resource metadata available through `gcloud`, and no
+BigQuery billing export was configured. Therefore the final billing values still have to be copied from the course
+billing pages: Sofiia used **[add credits]**, Lennart used **[add credits]**, for **[add total] credits** in total. We
+do not want to invent a financial value that cannot be verified from the project.
+
+From the resource inventory, Vertex AI GPU training was the most expensive service. The final job used an
+`n1-standard-16` worker with two T4 GPUs, and several preceding smoke/debug jobs also allocated Vertex resources. The
+single-T4 Compute Engine VM was the next relevant compute cost, although it is now terminated. Cloud Run was
+comparatively economical because the service scales to zero, while the roughly 1.06 GiB DVC bucket has negligible
+storage cost. Working in the cloud made jobs and deployment reproducible and shareable, but IAM, quotas, regions and
+cost visibility required more setup and careful cleanup than local development.
 
 ### Question 28
 
@@ -598,7 +703,31 @@ Yes. We implemented a frontend for our API: a dependency-free single-page HTML/C
 >
 > Answer:
 
---- question 29 fill here ---
+<!-- Add the architecture figure here. -->
+
+The workflow starts with five public prompt-safety datasets. Our data module downloads and normalizes them into a
+common JSONL schema, and DVC defines the preparation and stratified splitting stages. Git stores the code, Hydra
+configuration and DVC metadata; the larger raw/processed files, trained DistilBERT model and metrics are stored in the
+`prompt_classifier_mlops` Cloud Storage bucket. This makes a Git revision and `dvc.lock` sufficient to recover the
+complete training state.
+
+For training, the same CUDA container can run on the terminated single-T4 Compute Engine VM or as a managed Vertex AI
+Custom Job. The final path used Vertex AI with two T4 GPUs and Lightning DDP. It pulled the versioned splits from GCS,
+logged the resolved configuration and metrics to W&B, selected the best checkpoint by validation ROC-AUC and pushed
+the model, metrics and updated DVC metadata back to Cloud Storage. Secret Manager supplied the W&B credential without
+putting it into code or the image.
+
+On every push or pull request, GitHub Actions runs ruff, the offline pytest slices and Docker builds. For deployment,
+`gcloud run deploy --source` sends the source to Cloud Build; the built image is stored in Artifact Registry and
+deployed to Cloud Run. The model is baked into this self-contained serving image. Users reach either the embedded web
+frontend or FastAPI's `/predict` and `/attribute` endpoints.
+
+Operational data flows in two directions. Each prediction increments Prometheus request, latency and predicted-label
+metrics, while Cloud Monitoring uses Cloud Run's managed request metrics for 5xx and p95-latency email alerts.
+Prediction features and probabilities are also written to a separate monitoring bucket. Evidently compares those
+rows with the training baseline and renders the `/monitoring` drift and model-health dashboard. Thus code quality,
+artifact provenance, deployment, observability and drift detection form one traceable pipeline rather than separate
+manual steps.
 
 ### Question 30
 
