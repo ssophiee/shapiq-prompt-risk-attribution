@@ -6,14 +6,24 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 ENV WANDB_MODE=offline
 
-COPY pyproject.toml uv.lock README.md LICENSE ./
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends g++ \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN uv sync --frozen --no-dev --no-install-project
+COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY .dvc/config .dvc/config
+COPY dockerfiles/train-entrypoint.sh /usr/local/bin/train-entrypoint
+
+RUN chmod +x /usr/local/bin/train-entrypoint
+
+RUN uv sync --frozen --no-dev --no-install-project --extra cpu
 
 COPY configs configs/
 COPY src src/
 COPY dvc.yaml dvc.lock ./
 
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra cpu
 
-ENTRYPOINT ["uv", "run", "python", "-m", "shapiq_attribution.train"]
+RUN /app/.venv/bin/dvc config core.no_scm true
+
+ENTRYPOINT ["/usr/local/bin/train-entrypoint"]

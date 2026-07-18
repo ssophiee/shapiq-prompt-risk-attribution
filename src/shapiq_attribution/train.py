@@ -1,84 +1,140 @@
-"""Hydra entrypoint for DistilBERT prompt-risk classifier training."""
+"""Hydra entrypoint for Lightning prompt-risk classifier training."""
 
 from __future__ import annotations
 
 import json
-import random
+import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Literal
 
 import hydra
-import numpy as np
-import torch
-import wandb
+import lightning as L
+from google.cloud import secretmanager
 from hydra.utils import to_absolute_path
+from lightning.pytorch.callbacks import (
+    Callback,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
+from lightning.pytorch.loggers import WandbLogger
 from omegaconf import DictConfig, OmegaConf
-from torch.utils.data import DataLoader
-from transformers import get_linear_schedule_with_warmup
 
-from shapiq_attribution.data import PromptRiskExample, PromptRiskTextDataset, load_prompt_risk_jsonl
-from shapiq_attribution.evaluate import evaluate_model
-from shapiq_attribution.model import load_prompt_risk_model, load_prompt_risk_tokenizer, save_prompt_risk_model
-
-
-def set_seed(seed: int) -> None:
-    """Set random seeds for reproducible training.
-
-    Args:
-        seed: Random seed.
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+from shapiq_attribution.lightning_data_module import PromptRiskDataModule
+from shapiq_attribution.lightning_module import PromptRiskLightningModule
+from shapiq_attribution.model import (
+    load_prompt_risk_tokenizer,
+    save_prompt_risk_model,
+)
 
 
-def select_device(device_name: str) -> torch.device:
-    """Select the training device.
+def _extract_metrics(
+    results: Sequence[Mapping[str, float]],
+    stage: str,
+) -> dict[str, float]:
+    """Extract one stage's metrics from Lightning results.
 
     Args:
-        device_name: Device name or `auto`.
+        results: Results returned by Trainer.validate or Trainer.test.
+        stage: Metric prefix to remove.
 
     Returns:
-        Torch device.
+        Metrics without their stage prefix.
+    """
+    if not results:
+        return {}
+
+    prefix = f"{stage}/"
+    return {key.removeprefix(prefix): float(value) for key, value in results[0].items() if key.startswith(prefix)}
+
+
+def _parse_save_last(
+    value: object,
+) -> bool | Literal["link"]:
+    """Parse the Lightning save-last checkpoint option.
+
+    Args:
+        value: Hydra checkpoint option.
+
+    Returns:
+        Boolean checkpoint option or the link strategy.
 
     Raises:
-        ValueError: If a requested accelerator is unavailable.
+        ValueError: If the option is unsupported.
     """
-    if device_name == "auto":
-        if torch.cuda.is_available():
-            return torch.device("cuda")
-        if torch.backends.mps.is_available():
-            return torch.device("mps")
-        return torch.device("cpu")
-    if device_name == "cuda" and not torch.cuda.is_available():
-        raise ValueError("CUDA was requested but is not available")
-    if device_name == "mps" and not torch.backends.mps.is_available():
-        raise ValueError("MPS was requested but is not available")
-    return torch.device(device_name)
+    if value == "link":
+        return "link"
+    if isinstance(value, bool):
+        return value
+    raise ValueError("checkpoint.save_last must be true, false, or link")
 
 
-def make_dataloader(
-    examples: list[PromptRiskExample],
-    tokenizer,
-    max_length: int,
-    batch_size: int,
-    shuffle: bool,
-) -> DataLoader:
-    """Create a DataLoader for prompt-risk examples.
+def _load_wandb_api_key_from_secret() -> None:
+    """Load the W&B API key from GCP Secret Manager when configured."""
+    if os.environ.get("WANDB_API_KEY"):
+        return
+
+    secret_resource = os.environ.get("WANDB_API_KEY_SECRET")
+    if not secret_resource:
+        return
+
+    client = secretmanager.SecretManagerServiceClient()
+    response = client.access_secret_version(
+        request={"name": secret_resource},
+    )
+    api_key = response.payload.data.decode("utf-8").strip()
+    if not api_key:
+        raise RuntimeError("The configured W&B API key secret is empty")
+
+    os.environ["WANDB_API_KEY"] = api_key
+
+
+def _create_wandb_logger(
+    cfg: DictConfig,
+) -> WandbLogger | bool:
+    """Create the configured Lightning W&B logger.
 
     Args:
-        examples: Prompt-risk examples.
-        tokenizer: Hugging Face tokenizer.
-        max_length: Maximum tokenized sequence length.
-        batch_size: Batch size.
-        shuffle: Whether to shuffle examples.
+        cfg: Hydra configuration.
 
     Returns:
-        Prompt-risk dataloader.
+        W&B logger or False when logging is disabled.
+
+    Raises:
+        ValueError: If the configured W&B mode is unsupported.
     """
-    dataset = PromptRiskTextDataset(examples=examples, tokenizer=tokenizer, max_length=max_length)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    mode = str(cfg.wandb.mode)
+    if mode == "disabled":
+        return False
+    if mode not in {"online", "offline"}:
+        raise ValueError("wandb.mode must be one of: online, offline, disabled")
+    if mode == "online":
+        _load_wandb_api_key_from_secret()
+
+    save_dir = Path(to_absolute_path(cfg.wandb.save_dir))
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    logger = WandbLogger(
+        project=str(cfg.wandb.project),
+        entity=cfg.wandb.entity,
+        name=str(cfg.wandb.run_name),
+        save_dir=save_dir,
+        offline=mode == "offline",
+        log_model=bool(cfg.wandb.log_model),
+    )
+
+    resolved_config = OmegaConf.to_container(cfg, resolve=True)
+    if isinstance(resolved_config, dict):
+        logger.log_hyperparams({str(key): value for key, value in resolved_config.items()})
+
+    global_batch_size = (
+        int(cfg.training.batch_size)
+        * int(cfg.training.devices)
+        * int(cfg.training.num_nodes)
+        * int(cfg.training.accumulate_grad_batches)
+    )
+    logger.log_hyperparams({"training.global_batch_size": global_batch_size})
+    return logger
 
 
 def train_model(cfg: DictConfig) -> dict[str, dict[str, float]]:
@@ -88,100 +144,114 @@ def train_model(cfg: DictConfig) -> dict[str, dict[str, float]]:
         cfg: Hydra configuration.
 
     Returns:
-        Nested metrics dictionary.
+        Nested validation and test metrics.
     """
-    set_seed(int(cfg.training.seed))
-    device = select_device(str(cfg.training.device))
-
-    train_examples = load_prompt_risk_jsonl(to_absolute_path(cfg.data.train_path))
-    val_examples = load_prompt_risk_jsonl(to_absolute_path(cfg.data.val_path))
-    test_examples = load_prompt_risk_jsonl(to_absolute_path(cfg.data.test_path))
+    L.seed_everything(
+        int(cfg.training.seed),
+        workers=True,
+    )
 
     tokenizer = load_prompt_risk_tokenizer(str(cfg.model.name))
-    model = load_prompt_risk_model(str(cfg.model.name), num_labels=int(cfg.model.num_labels))
-    model.to(device)
-
-    train_loader = make_dataloader(
-        examples=train_examples,
-        tokenizer=tokenizer,
+    data_module = PromptRiskDataModule(
+        train_path=to_absolute_path(cfg.data.train_path),
+        val_path=to_absolute_path(cfg.data.val_path),
+        test_path=to_absolute_path(cfg.data.test_path),
+        model_name=str(cfg.model.name),
         max_length=int(cfg.model.max_length),
         batch_size=int(cfg.training.batch_size),
-        shuffle=True,
-    )
-    val_loader = make_dataloader(
-        examples=val_examples,
+        num_workers=int(cfg.training.num_workers),
+        pin_memory=bool(cfg.training.pin_memory),
+        persistent_workers=bool(cfg.training.persistent_workers),
         tokenizer=tokenizer,
-        max_length=int(cfg.model.max_length),
-        batch_size=int(cfg.training.batch_size),
-        shuffle=False,
     )
-    test_loader = make_dataloader(
-        examples=test_examples,
-        tokenizer=tokenizer,
-        max_length=int(cfg.model.max_length),
-        batch_size=int(cfg.training.batch_size),
-        shuffle=False,
-    )
-
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=float(cfg.training.learning_rate),
+    model = PromptRiskLightningModule(
+        model_name=str(cfg.model.name),
+        num_labels=int(cfg.model.num_labels),
+        learning_rate=float(cfg.training.learning_rate),
         weight_decay=float(cfg.training.weight_decay),
     )
-    total_steps = len(train_loader) * int(cfg.training.epochs)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
 
-    run = wandb.init(
-        project=cfg.wandb.project,
-        entity=cfg.wandb.entity,
-        name=cfg.wandb.run_name,
-        mode=cfg.wandb.mode,
-        config=OmegaConf.to_container(cfg, resolve=True),
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=to_absolute_path(cfg.checkpoint.dirpath),
+        filename=str(cfg.checkpoint.filename),
+        monitor=str(cfg.checkpoint.monitor),
+        mode=str(cfg.checkpoint.mode),
+        save_top_k=int(cfg.checkpoint.save_top_k),
+        save_last=_parse_save_last(cfg.checkpoint.save_last),
+        auto_insert_metric_name=False,
     )
 
-    try:
-        val_metrics: dict[str, float] = {}
-        for epoch in range(int(cfg.training.epochs)):
-            model.train()
-            train_losses = []
+    logger = _create_wandb_logger(cfg)
 
-            for batch in train_loader:
-                batch = {key: value.to(device) for key, value in batch.items()}
-                optimizer.zero_grad()
-                outputs = model(**batch)
-                outputs.loss.backward()
-                optimizer.step()
-                scheduler.step()
-                train_losses.append(float(outputs.loss.detach().cpu()))
+    callbacks: list[Callback] = [checkpoint_callback]
+    if logger is not False:
+        callbacks.append(LearningRateMonitor(logging_interval="step"))
 
-            val_metrics = evaluate_model(model=model, dataloader=val_loader, device=device)
-            wandb.log(
-                {
-                    "epoch": epoch + 1,
-                    "train/loss": float(np.mean(train_losses)),
-                    **{f"val/{key}": value for key, value in val_metrics.items()},
-                }
-            )
+    trainer = L.Trainer(
+        max_epochs=int(cfg.training.epochs),
+        accelerator=str(cfg.training.accelerator),
+        devices=int(cfg.training.devices),
+        strategy=str(cfg.training.strategy),
+        num_nodes=int(cfg.training.num_nodes),
+        precision=cfg.training.precision,
+        accumulate_grad_batches=int(cfg.training.accumulate_grad_batches),
+        deterministic=bool(cfg.training.deterministic),
+        limit_train_batches=cfg.training.limit_train_batches,
+        limit_val_batches=cfg.training.limit_val_batches,
+        limit_test_batches=cfg.training.limit_test_batches,
+        log_every_n_steps=int(cfg.training.log_every_n_steps),
+        logger=logger,
+        callbacks=callbacks,
+    )
 
-        test_metrics = evaluate_model(model=model, dataloader=test_loader, device=device)
-        wandb.log({f"test/{key}": value for key, value in test_metrics.items()})
+    resume_from = cfg.checkpoint.resume_from
+    checkpoint_path = to_absolute_path(str(resume_from)) if resume_from else None
 
+    trainer.fit(model=model, datamodule=data_module, ckpt_path=checkpoint_path)
+
+    validation_results = trainer.validate(
+        model=model,
+        datamodule=data_module,
+        ckpt_path="best",
+    )
+
+    test_results = trainer.test(
+        model=model,
+        datamodule=data_module,
+        ckpt_path="best",
+    )
+
+    metrics = {
+        "val": _extract_metrics(validation_results, stage="val"),
+        "test": _extract_metrics(test_results, stage="test"),
+    }
+
+    if trainer.is_global_zero:
         model_dir = Path(to_absolute_path(cfg.output.model_dir))
-        save_prompt_risk_model(model=model, tokenizer=tokenizer, output_dir=model_dir)
+        save_prompt_risk_model(
+            model=model.model,
+            tokenizer=tokenizer,
+            output_dir=model_dir,
+        )
 
-        metrics = {"val": val_metrics, "test": test_metrics}
         metrics_path = Path(to_absolute_path(cfg.output.metrics_path))
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+        metrics_path.write_text(
+            json.dumps(metrics, indent=2),
+            encoding="utf-8",
+        )
 
-        return metrics
-    finally:
-        run.finish()
+    trainer.strategy.barrier()
+    return metrics
 
 
-@hydra.main(version_base=None, config_path="../../configs", config_name="train")
+@hydra.main(
+    version_base=None,
+    config_path="../../configs",
+    config_name="train",
+)
 def main(cfg: DictConfig) -> None:
-    """Run the training pipeline step.
+    """Run the Lightning training pipeline.
 
     Args:
         cfg: Hydra configuration.

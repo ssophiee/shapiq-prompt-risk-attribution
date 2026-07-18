@@ -30,11 +30,11 @@ RUN pip install --no-cache-dir uv
 
 # 1) Dependency layer — cached unless pyproject.toml / uv.lock change.
 COPY pyproject.toml uv.lock README.md LICENSE ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --extra cpu
 
 # 2) Source layer — changes here don't bust the dependency cache above.
 COPY src src/
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra cpu
 
 EXPOSE 8000
 

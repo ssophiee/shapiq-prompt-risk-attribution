@@ -13,23 +13,23 @@ A0 is complete. DVC is configured with a Google Cloud Storage remote:
 storage gs://prompt_classifier_mlops
 ```
 
-The current DVC-tracked data assets are:
+The raw snapshot is tracked through a standalone DVC file:
 
 ```text
 data/raw.dvc
-data/processed/prompt_risk_dataset.jsonl.dvc
 ```
 
-The old `data/prompts.json.dvc` reference was removed because the underlying file was no longer part of the active data
-pipeline. The old `data/processed.dvc` directory tracking was also removed because DVC pipeline outputs now live under
-`data/processed/`.
+Processed data, the served model, and metrics are declared as pipeline outputs
+in `dvc.yaml` and recorded in `dvc.lock`; they do not have separate `.dvc`
+files.
 
 ### A1: Split and training
 
-A1 is complete. The Hydra/DVC pipeline splits the normalized prompt-risk dataset, trains a DistilBERT classifier, logs
-metrics to W&B, and saves model and metrics artifacts.
+A1 is complete. The Hydra/DVC pipeline splits the normalized prompt-risk
+dataset, trains a DistilBERT classifier with PyTorch Lightning, logs metrics to
+W&B, and saves model and metrics artifacts.
 
-Planned inputs and outputs:
+Current inputs and outputs:
 
 ```text
 Input:
@@ -42,6 +42,30 @@ Outputs:
   models/prompt_risk_distilbert/
   reports/metrics.json
 ```
+
+Hydra provides three hardware profiles:
+
+```text
+local       one auto-selected device, 32-bit
+single_gpu  one CUDA GPU, 16-bit mixed precision
+ddp         two CUDA GPUs on one node, 16-bit mixed precision
+```
+
+Direct training defaults to `local`:
+
+```bash
+uv run python -m shapiq_attribution.train
+uv run python -m shapiq_attribution.train hardware=single_gpu
+```
+
+The canonical DVC model producer is the two-GPU stage:
+
+```bash
+uv run dvc repro train_vertex_ddp
+```
+
+That command requires two CUDA GPUs because the stage explicitly selects
+`hardware=ddp`.
 
 ### Model handoff
 
@@ -68,9 +92,11 @@ masked prompt -> P(risky)
 ## Useful commands
 
 ```bash
+uv sync --extra cpu
 uv run dvc pull
 uv run dvc status
-uv run dvc repro
+uv run dvc repro prepare_dataset split_data
+uv run dvc repro train_vertex_ddp  # requires two CUDA GPUs
 uv run pytest tests/
 uv run ruff check . --fix
 uv run ruff format .

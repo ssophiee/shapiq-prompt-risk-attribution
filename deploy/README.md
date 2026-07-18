@@ -20,7 +20,7 @@ can't be mounted the way `docker-compose` does it locally).
 4. Get the data and model (DVC remote is a GCS bucket, hence step 3):
 
    ```bash
-   uv sync
+   uv sync --extra cpu
    uv run dvc pull
    ```
 

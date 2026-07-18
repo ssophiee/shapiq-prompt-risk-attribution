@@ -5,16 +5,16 @@ stages:
     deps:
     - path: configs/train.yaml
       hash: md5
-      md5: adfedf2044d46b4ad529ab139beb82c7
-      size: 631
+      md5: 3828a65b350d28bea0cb4fd9282bb805
+      size: 1190
     - path: data/processed/prompt_risk_dataset.jsonl
       hash: md5
       md5: ea68cc5d4b3e06eff5e2b31e0dda5d07
       size: 15310858
     - path: src/shapiq_attribution/data.py
       hash: md5
-      md5: 59a16ce8e809ab7d1d5044799a47347d
-      size: 18753
+      md5: 8acb5139c001708098e129217ca7ad72
+      size: 18849
     - path: src/shapiq_attribution/split_data.py
       hash: md5
       md5: 8f62d06e6549289a5a458476cafe3fb3
@@ -32,13 +32,18 @@ stages:
       hash: md5
       md5: bca0863a6cd895af69901318bd23077c
       size: 1486075
-  train:
-    cmd: uv run python -m shapiq_attribution.train
+  train_vertex_ddp:
+    cmd: uv run python -m shapiq_attribution.train hardware=ddp
     deps:
+    - path: configs/hardware
+      hash: md5
+      md5: 6dad2688c47b3bd8548f152508738c8c.dir
+      size: 460
+      nfiles: 3
     - path: configs/train.yaml
       hash: md5
-      md5: adfedf2044d46b4ad529ab139beb82c7
-      size: 631
+      md5: 3828a65b350d28bea0cb4fd9282bb805
+      size: 1190
     - path: data/processed/test.jsonl
       hash: md5
       md5: 3cf5a9c5376bc6741595b59c08fe67bd
@@ -53,29 +58,33 @@ stages:
       size: 1486075
     - path: src/shapiq_attribution/data.py
       hash: md5
-      md5: 59a16ce8e809ab7d1d5044799a47347d
-      size: 18753
-    - path: src/shapiq_attribution/evaluate.py
+      md5: 8acb5139c001708098e129217ca7ad72
+      size: 18849
+    - path: src/shapiq_attribution/lightning_data_module.py
       hash: md5
-      md5: f41fc28394c32a8edb3499eed20389dc
-      size: 2266
+      md5: 4dc7f973ee3e6c49b44cac0495969824
+      size: 4891
+    - path: src/shapiq_attribution/lightning_module.py
+      hash: md5
+      md5: 94c7ea65712587ad7d9f2eee53fc18ed
+      size: 5712
     - path: src/shapiq_attribution/model.py
       hash: md5
-      md5: 2f9dc1cfa3edb866c33cab1fca2ddfc1
-      size: 4410
+      md5: 058697f9de0bc6a1ee70f158efba0416
+      size: 5714
     - path: src/shapiq_attribution/train.py
       hash: md5
-      md5: 90206c3c1d39be8ebf31fa40f45454cd
-      size: 6204
+      md5: 0f5c74fd50ee939235719034b6ef95bd
+      size: 7818
     outs:
     - path: models/prompt_risk_distilbert
       hash: md5
-      md5: e43ea16adb90118e46083ca120dab3d6.dir
-      size: 268545213
+      md5: 11d4e019f2eb5ef32bb21bee9ea7092f.dir
+      size: 268544948
       nfiles: 4
     - path: reports/metrics.json
       hash: md5
-      md5: b025ac0f6d92e2608a4338d5297b3272
+      md5: 15c1242c6c15de618329902cc2cec563
       size: 441
   prepare_dataset:
     cmd: uv run python -m shapiq_attribution.data build-dataset --raw-dir
@@ -88,8 +97,8 @@ stages:
       nfiles: 7
     - path: src/shapiq_attribution/data.py
       hash: md5
-      md5: 59a16ce8e809ab7d1d5044799a47347d
-      size: 18753
+      md5: 8acb5139c001708098e129217ca7ad72
+      size: 18849
     outs:
     - path: data/processed/prompt_risk_dataset.jsonl
       hash: md5

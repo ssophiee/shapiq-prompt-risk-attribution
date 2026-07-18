@@ -1,3 +1,7 @@
+defaults:
+  - _self_
+  - hardware: local
+
 data:
   input_path: data/processed/prompt_risk_dataset.jsonl
   train_path: data/processed/train.jsonl
@@ -20,14 +24,38 @@ training:
   learning_rate: 2e-5
   weight_decay: 0.01
   seed: 12
-  device: auto
+  accelerator: auto
+  devices: 1
+  strategy: auto
+  num_nodes: 1
+  precision: 32-true
+  accumulate_grad_batches: 1
+  deterministic: false
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
+  log_every_n_steps: 10
 
 output:
   model_dir: models/prompt_risk_distilbert
   metrics_path: reports/metrics.json
+
+checkpoint:
+  dirpath: outputs/checkpoints/prompt_risk
+  filename: prompt-risk-{epoch:02d}
+  monitor: val/roc_auc
+  mode: max
+  save_top_k: 1
+  save_last: link
+  resume_from: null
 
 wandb:
   project: shapiq-attribution
   entity: null
   mode: online
   run_name: distilbert-prompt-risk
+  save_dir: outputs/wandb
+  log_model: false

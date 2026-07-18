@@ -1,0 +1,9 @@
+# @package training
+accelerator: gpu
+devices: 2
+strategy: ddp
+num_nodes: 1
+precision: 16-mixed
+num_workers: 4
+pin_memory: true
+persistent_workers: true

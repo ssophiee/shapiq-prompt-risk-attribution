@@ -39,6 +39,8 @@ services:
     image: shapiq-train:latest
     environment:
       WANDB_MODE: offline
+      SKIP_DVC_PULL: "true"
+      TRAIN_HARDWARE_PROFILE: local
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -54,6 +56,8 @@ services:
     image: shapiq-train-gpu:latest
     environment:
       WANDB_MODE: offline
+      SKIP_DVC_PULL: "true"
+      TRAIN_HARDWARE_PROFILE: single_gpu
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -64,5 +68,5 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: 1
               capabilities: [gpu]

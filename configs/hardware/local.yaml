@@ -1,0 +1,9 @@
+# @package training
+accelerator: auto
+devices: 1
+strategy: auto
+num_nodes: 1
+precision: 32-true
+num_workers: 0
+pin_memory: false
+persistent_workers: false
