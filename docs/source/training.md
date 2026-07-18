@@ -109,6 +109,51 @@ The command exits with status 1 if the splits do not reconstruct the processed
 dataset, prompts leak between splits, a dataset is empty, or duplicate prompts
 are present.
 
+## Continuous model registry checks
+
+The `stage-model` workflow implements the second M19 continuous-machine-learning
+pattern. Online training runs publish the exported Hugging Face directory and
+`reports/metrics.json` as a versioned W&B model artifact, link it to
+`wandb-registry-Models/prompt-risk-distilbert`, and initially assign the
+`candidate` alias. An already trained local model can be published without
+retraining:
+
+```bash
+WANDB_ENTITY=<team> WANDB_PROJECT=shapiq-attribution \
+uv run python -m shapiq_attribution.model_registry publish
+```
+
+Adding the `staging` alias in W&B sends a `staged_model` repository dispatch to
+GitHub. The workflow downloads the exact staged model, pulls the DVC-versioned
+test split from GCS, and evaluates a deterministic balanced sample of 512
+examples. Promotion requires valid probabilities, predictions from both
+classes, F1 of at least 0.70, and ROC-AUC of at least 0.85. The resulting
+Markdown and JSON reports are retained as the `staged-model-validation`
+workflow artifact. Only a passing model is linked to the same Registry
+collection with the `production` alias.
+
+The workflow needs the GitHub repository secrets `WANDB_API_KEY`,
+`WANDB_ENTITY`, `WANDB_PROJECT`, and `GCP_SA_KEY`. Its automatic W&B webhook
+payload is:
+
+```json
+{
+  "event_type": "staged_model",
+  "client_payload": {
+    "event_author": "${event_author}",
+    "artifact_version": "${artifact_version}",
+    "artifact_version_string": "${artifact_version_string}",
+    "artifact_collection_name": "${artifact_collection_name}",
+    "project_name": "${project_name}",
+    "entity_name": "${entity_name}"
+  }
+}
+```
+
+The workflow also has a manual `workflow_dispatch` input for testing and for
+W&B plans without Registry Automations. The input must be the exact Registry
+artifact path shown by W&B, including an immutable version such as `:v3`.
+
 ## Using the trained classifier from Python
 
 ```python

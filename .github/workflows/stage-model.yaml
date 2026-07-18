@@ -1,0 +1,81 @@
+name: stage-model
+
+on:
+  repository_dispatch:
+    types: [staged_model]
+  workflow_dispatch:
+    inputs:
+      artifact_path:
+        description: Fully qualified W&B Registry artifact, including version or alias
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage-model-${{ github.event.client_payload.artifact_version_string || inputs.artifact_path }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-promote:
+    runs-on: ubuntu-latest
+    env:
+      WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+      WANDB_ENTITY: ${{ secrets.WANDB_ENTITY }}
+      WANDB_PROJECT: ${{ secrets.WANDB_PROJECT }}
+      MODEL_ARTIFACT: ${{ github.event.client_payload.artifact_version_string || inputs.artifact_path }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra cpu
+
+      - name: Authenticate with GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Pull DVC-versioned test data
+        run: uv run dvc pull --no-run-cache data/processed/test.jsonl
+
+      - name: Validate staged model
+        id: model-validation
+        continue-on-error: true
+        run: |
+          uv run python -m shapiq_attribution.model_registry validate \
+            --artifact-path "$MODEL_ARTIFACT" \
+            --test-data data/processed/test.jsonl \
+            --markdown-report model-validation.md \
+            --json-report model-validation.json
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staged-model-validation
+          path: |
+            model-validation.md
+            model-validation.json
+          if-no-files-found: warn
+
+      - name: Promote validated model
+        if: steps.model-validation.outcome == 'success'
+        run: |
+          uv run python -m shapiq_attribution.model_registry promote \
+            --artifact-path "$MODEL_ARTIFACT" \
+            --alias production
+
+      - name: Enforce model validation
+        if: steps.model-validation.outcome == 'failure'
+        run: exit 1

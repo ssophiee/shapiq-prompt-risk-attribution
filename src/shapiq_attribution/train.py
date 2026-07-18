@@ -27,6 +27,7 @@ from shapiq_attribution.model import (
     load_prompt_risk_tokenizer,
     save_prompt_risk_model,
 )
+from shapiq_attribution.model_registry import log_model_artifact
 
 
 def _extract_metrics(
@@ -287,6 +288,14 @@ def train_model(cfg: DictConfig) -> dict[str, dict[str, float]]:
             json.dumps(metrics, indent=2),
             encoding="utf-8",
         )
+        if logger is not False and str(cfg.wandb.mode) == "online" and bool(cfg.wandb.model_artifact.enabled):
+            log_model_artifact(
+                run=logger.experiment,
+                model_dir=model_dir,
+                metrics_path=metrics_path,
+                artifact_name=str(cfg.wandb.model_artifact.name),
+                registry_target=str(cfg.wandb.model_artifact.registry_target),
+            )
 
     trainer.strategy.barrier()
     return metrics

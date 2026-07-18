@@ -62,3 +62,7 @@ wandb:
   run_name: distilbert-prompt-risk
   save_dir: outputs/wandb
   log_model: false
+  model_artifact:
+    enabled: true
+    name: prompt-risk-distilbert
+    registry_target: wandb-registry-Models/prompt-risk-distilbert

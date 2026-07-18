@@ -13,6 +13,9 @@
   * To check artifact status, use `uv run dvc status`.
   * To push artifacts to Google Cloud Storage, use `uv run dvc push`.
   * The default DVC remote is `storage` at `gs://prompt_classifier_mlops`.
+* The project uses W&B as its model registry:
+  * To publish the existing trained model, use `uv run python -m shapiq_attribution.model_registry publish`.
+  * To validate a staged artifact, use `uv run python -m shapiq_attribution.model_registry validate --artifact-path <path>`.
 * The project uses `ruff` for linting and formatting:
     * To format code, use `uv run ruff format .`.
     * To lint code, use `uv run ruff check . --fix`.

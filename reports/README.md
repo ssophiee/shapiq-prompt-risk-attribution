@@ -92,7 +92,10 @@ will check the repositories and the code to verify your answers.
     * *`cml-data.yaml` follows the course CML pattern: DVC metadata changes trigger GCP authentication, raw-data pull,
       preprocessing/splitting, data tests and a text-only integrity report uploaded as an artifact and posted to pull
       requests through an updating CML comment.*
-* [ ] Add a continues workflow that triggers when changes to the model registry is made (M19)
+* [x] Add a continues workflow that triggers when changes to the model registry is made (M19)
+    * *`stage-model.yaml` listens for W&B's `staged_model` repository dispatch (and supports manual testing), downloads
+      the exact staged artifact and the DVC test split, enforces model-file, probability, class-output, F1 and ROC-AUC
+      gates, uploads a text/JSON report, and assigns `production` only after every check passes.*
 * [x] Create a data storage in GCP Bucket for your data and link this with your data version control setup (M21)
     * *DVC remote on GCS (`gs://prompt_classifier_mlops`) holding the datasets and trained model.*
 * [x] Create a trigger workflow for automatically building your docker images (M21)
