@@ -44,29 +44,52 @@ that drive risky and safe predictions.
 ## Architecture
 
 ```mermaid
-flowchart LR
-    subgraph Training
-        RAW[Safety benchmarks<br/>AdvBench / HarmBench / WildGuard<br/>ToxicChat / BeaverTails] -->|preprocess + split| DVC[(DVC-tracked<br/>data + model)]
-        DVC --> TRAIN[Train DistilBERT<br/>PyTorch Lightning + Hydra]
-        TRAIN --> WANDB[W&B experiment tracking]
-        TRAIN --> BASE[baseline.csv<br/>feature snapshot]
+flowchart TB
+    subgraph DEV["Development & CI/CD"]
+        direction LR
+        REPO[GitHub<br/>repository] --> GA[GitHub Actions<br/>lint · tests · image builds]
+        GA --> CB[Cloud Build<br/>Docker image]
+        CB --> AR[Artifact<br/>Registry]
+        AR --> CR[Cloud Run<br/>deploy]
     end
 
-    subgraph CI/CD
-        GH[GitHub Actions<br/>lint + tests] --> BUILD[Cloud Build<br/>Docker image]
-        BUILD --> RUN[Cloud Run<br/>FastAPI service]
+    subgraph TRAINING["Training pipeline"]
+        direction LR
+        DATA[Safety benchmarks<br/>AdvBench · HarmBench · WildGuard<br/>ToxicChat · BeaverTails] --> DVC[(DVC on GCS<br/>data + model)]
+        DVC --> TRAIN[DistilBERT training<br/>PyTorch Lightning + Hydra]
+        TRAIN --> WB[Weights & Biases<br/>tracking + sweep]
+        TRAIN --> CKPT[Best model<br/>checkpoint]
+        TRAIN --> BASE[baseline.csv<br/>drift snapshot]
     end
 
-    DVC -->|model baked into image| BUILD
-
-    subgraph Serving & Monitoring
-        USER((User)) -->|/predict, /attribute| RUN
-        RUN -->|Prometheus /metrics| METRICS[System metrics]
-        RUN -->|feature rows| GCS[(GCS monitoring bucket)]
-        RUN --> CM[Cloud Monitoring<br/>5xx + latency alerts]
-        GCS -->|fetch| EV[Evidently drift report]
-        BASE --> EV
+    subgraph SERVING["Deployment"]
+        direction LR
+        USER((User)) --> UI[Web UI<br/>embedded frontend]
+        UI --> API[FastAPI backend<br/>/predict · /attribute]
+        API --> ROWS[(Prediction logs<br/>GCS bucket)]
     end
+
+    subgraph MONITORING["Monitoring & alerting"]
+        direction LR
+        PROM[Prometheus<br/>/metrics] --> CM[Google Cloud<br/>Monitoring] --> ALERT[Email alerts<br/>5xx · p95 latency]
+    end
+
+    subgraph DRIFT["Drift detection"]
+        direction LR
+        EV[Evidently<br/>drift + health tests] --> REPORT[Drift report<br/>served at /monitoring]
+    end
+
+    CKPT -->|baked into image| CB
+    CR --> API
+    API --> PROM
+    ROWS --> EV
+    BASE --> EV
+
+    style DEV fill:#e8f0fe,stroke:#4285f4,stroke-width:2px
+    style TRAINING fill:#e6f4ea,stroke:#34a853,stroke-width:2px
+    style SERVING fill:#fef7e0,stroke:#f9ab00,stroke-width:2px
+    style MONITORING fill:#f3e8fd,stroke:#a142f4,stroke-width:2px
+    style DRIFT fill:#fce8e6,stroke:#ea4335,stroke-width:2px
 ```
 
 ## Quickstart
