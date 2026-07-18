@@ -8,6 +8,11 @@ theme:
   features:
     - content.code.copy
     - content.code.annotate
+    - navigation.tabs
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - toc.follow
 
 plugins:
   - search
@@ -21,3 +26,9 @@ plugins:
 
 nav:
   - Home: index.md
+  - Getting started: getting-started.md
+  - API: api.md
+  - Training: training.md
+  - Monitoring: monitoring.md
+  - Project structure: structure.md
+  - Code reference: reference.md

@@ -95,7 +95,8 @@ will check the repositories and the code to verify your answers.
 * [x] Create a FastAPI application that can do inference using your model (M22)
 * [x] Deploy your model in GCP using either Functions or Run as the backend (M23)
 * [x] Write API tests for your application and setup continues integration for these (M24)
-* [ ] Load test your application (M24)
+* [x] Load test your application (M24)
+    * *Locust (`locustfile.py`, `invoke load-test`) simulating mixed traffic against the deployed Cloud Run service — weighted mostly `/predict`, plus `/health`, the frontend, and occasional low-budget `/attribute` calls. Result: 266 requests, 0 failures; `/predict` median 240 ms / p95 380 ms / p99 520 ms, low-budget `/attribute` median ~500 ms.*
 * [ ] Create a more specialized ML-deployment API using either ONNX or BentoML, or both (M25)
 * [x] Create a frontend for your API (M26)
     * *Dependency-free single-page HTML/CSS/JS UI, embedded in `web.py` and served by the same FastAPI container at `/`.*
@@ -186,7 +187,7 @@ We used three third-party packages not covered in the course. The most central o
 We used `uv` to manage our dependencies. Runtime dependencies are declared in `pyproject.toml`, with development tools (pytest, ruff, mypy, pre-commit, mkdocs, ...) separated into a `dev` dependency group. The exact resolved versions are in the committed `uv.lock` file, and `.python-version` pins the interpreter to Python 3.13, so every machine resolves to an identical environment. PyTorch is selected through optional extras: containers and CI install with `--extra cpu` (CPU-only wheels, keeping images ~7 GB slimmer), while the GPU training image uses `--extra cu124`, with `[tool.uv.sources]` mapping each extra to the right PyTorch index. A new team member would run:
 
 ```bash
-git clone <repo-url> && cd shapiq-cot-attribution
+git clone <repo-url> && cd shapiq-prompt-risk-attribution
 uv sync                                    # creates .venv with exact locked versions (incl. dev group)
 uv run dvc pull                            # fetch DVC-tracked data + trained model from GCS
 uv run pre-commit install --install-hooks  # enable the linting/formatting hooks
@@ -276,7 +277,7 @@ Even with 100% coverage we would not consider the code error free: coverage only
 >
 > Answer:
 
-No, we worked directly on `main`. As a two-person team we split the project into clearly separated areas (training pipeline vs. serving/monitoring), committed small and frequently, and coordinated directly, so we rarely touched the same files and merge conflicts were not a practical problem. Our CI still ran the linting, test and Docker-build workflows on every push to `main`, and the workflows are additionally configured with `pull_request` triggers, so a PR-based flow was prepared even though we did not use it.
+For development we worked directly on `main`, without feature branches or pull requests. As a two-person team we split the project into clearly separated areas (training pipeline vs. serving/monitoring), committed small and frequently, and coordinated directly, so we rarely touched the same files and merge conflicts were not a practical problem. Our CI still ran the linting, test and Docker-build workflows on every push to `main`, and the workflows are additionally configured with `pull_request` triggers, so a PR-based flow was prepared even though we did not use it. The repository does have a second branch, `gh-pages`, but it serves a different purpose than collaboration: `mkdocs gh-deploy` pushes the built documentation site to it, and GitHub Pages hosts the docs from that branch — the branch as a deployment target rather than a line of development.
 
 In a larger team, branches and pull requests would improve this setup. Branches separate work in progress, so `main` always stays in a deployable state and a faulty feature can't affect a deployment. Pull requests then add a quality check before merging: CI must pass before merging (instead of after the code already landed on `main`), a second person reviews the change and checks for bugs, and the PR itself documents why a change was made. Hence, it is impossible for untested or unreviewed code to reach the branch that images are built from.
 
@@ -489,7 +490,7 @@ We used five GCP services. **Cloud Storage** provides object storage in buckets:
 >
 > Answer:
 
---- question 23 fill here ---
+Yes, we wrote a FastAPI application (`src/shapiq_attribution/api.py`). The DistilBERT classifier is loaded once at startup via the lifespan hook and provided to endpoints through FastAPI's dependency injection, which also lets tests swap in a stub predictor. Pydantic models validate all requests and responses. The API exposes `POST /predict` (risk probability + label for a prompt) and — the special part — `POST /attribute`, which explains a prediction by treating each word as a player in a cooperative game and computing Shapley values and pairwise interactions with KernelSHAPIQ, with a configurable computation budget. Beyond inference we added: a dependency-free HTML/JS frontend served at `/` from the same container, `GET /health` for probes, `GET /metrics` with Prometheus counters and per-endpoint latency histograms (collected by an HTTP middleware), and `GET /monitoring`, which renders an Evidently data-drift report. Finally, every prediction is mirrored (prompt, input statistics, predicted probability) to a GCS bucket via FastAPI background tasks, so logging never delays the response to the user.
 
 ### Question 24
 
@@ -505,7 +506,14 @@ We used five GCP services. **Cloud Storage** provides object storage in buckets:
 >
 > Answer:
 
---- question 24 fill here ---
+Yes, both locally and in the cloud. Locally the API runs either directly (`uv run uvicorn shapiq_attribution.api:app`) or containerized (`invoke docker-build-api && invoke docker-run-api`), with the DVC-pulled model mounted into the container. For the cloud we deploy to Cloud Run with a single script (`PROJECT_ID=... ./deploy/cloudrun.sh`) that wraps `gcloud run deploy --source .`: Cloud Build builds the image from our Dockerfile (model baked in), pushes it to Artifact Registry, and Cloud Run serves it with 2 vCPU / 2 GiB, a 300 s timeout for the expensive attribution endpoint, and scale-to-zero when idle. The service can be used through the web frontend at <https://shapiq-api-268593597387.europe-west1.run.app> or:
+
+```bash
+curl -X POST https://shapiq-api-268593597387.europe-west1.run.app/predict \
+  -H "Content-Type: application/json" -d '{"prompt": "How do I bake bread?"}'
+```
+
+The same pattern with a `budget` field calls `/attribute` for explanations, and FastAPI's interactive docs are available at `/docs`.
 
 ### Question 25
 
@@ -521,7 +529,9 @@ We used five GCP services. **Cloud Storage** provides object storage in buckets:
 >
 > Answer:
 
---- question 25 fill here ---
+Yes, both. For functional testing we use pytest with FastAPI's `TestClient` (`tests/test_api.py`, 10 tests): the model-loading dependency is overridden with a deterministic stub predictor, so the tests verify endpoint behaviour — response schemas, the risky/safe thresholding, validation errors, the Prometheus `/metrics` counters, and the `/monitoring` drift report built from local CSVs — quickly and offline. These API tests also run in CI on every push.
+
+For load testing we used Locust (`locustfile.py`, run via `invoke load-test`) against the actually deployed Cloud Run service, simulating users with realistic think time and a weighted endpoint mix: mostly `/predict`, some `/health` and frontend loads, and occasional `/attribute` calls at a small budget. The results: 266 requests with 0 failures; `/predict` had a median of 240 ms, p95 of 380 ms and p99 of 520 ms, `/health` and the frontend stayed around 40-55 ms, and low-budget `/attribute` calls took ~500 ms. The service handled the concurrent load without errors, confirming that the 2 vCPU / 2 GiB Cloud Run configuration is adequate for this traffic level.
 
 ### Question 26
 
@@ -536,7 +546,7 @@ We used five GCP services. **Cloud Storage** provides object storage in buckets:
 >
 > Answer:
 
---- question 26 fill here ---
+Yes, monitoring works in three layers. First, data collection: every `/predict` and `/attribute` call mirrors its prompt, input statistics (`prompt_len`, `token_count`) and predicted probability to a GCS bucket via background tasks. Second, drift detection: `GET /monitoring` on the deployed service fetches the training-set baseline plus all logged prediction rows and renders an Evidently report — data-drift tests on prompt length, token count and `p_risky`, plus a health test that the mean predicted risk stays in [0.2, 0.8], which would catch a model that collapsed to predicting everything safe (or risky) even without input drift. Third, system monitoring: the API exposes Prometheus metrics (request counts per endpoint and status code, latency histograms, a risky-vs-safe label counter), and Google Cloud Monitoring watches Cloud Run's request metrics with two email alert policies: any 5xx responses within 5 minutes, and p95 latency above 30 s. This monitoring proved itself: a real 5xx alert fired, the request logs pointed to slow cold starts (the container re-installed dev dependencies at startup), and we fixed the Docker entrypoint as a result.
 
 ## Overall discussion of project
 
@@ -571,7 +581,7 @@ We used five GCP services. **Cloud Storage** provides object storage in buckets:
 >
 > Answer:
 
---- question 28 fill here ---
+Yes. We implemented a frontend for our API: a dependency-free single-page HTML/CSS/JS app embedded in `web.py` and served at `/` by the same FastAPI container. We did this so the classifier and especially the SHAPIQ explanations are usable by non-technical users — the page shows the risk score and colors each word of the prompt by its Shapley value. Secondly, we split our infrastructure across two GCP projects (data/training vs. serving/monitoring, mirroring our team split), connected by a least-privilege bucket-level IAM grant. Finally, we published an [MkDocs (Material) documentation site](https://ssophiee.github.io/shapiq-prompt-risk-attribution/) to GitHub Pages, with getting-started, API, training, monitoring guides and a code reference.
 
 ### Question 29
 

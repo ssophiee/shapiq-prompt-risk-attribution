@@ -1,103 +1,62 @@
 # shapiq_attribution
 
-`shapiq_attribution` is an MLOps project for training prompt-risk classifiers and explaining their predictions with
-SHAPIQ attribution methods.
+**Prompt-risk classification with game-theoretic explanations.** A fine-tuned
+DistilBERT classifier estimates the probability that a user prompt is unsafe,
+and [shapiq](https://github.com/mmschlk/shapiq) explains every prediction by
+treating the prompt's words as players in a cooperative game — computing
+per-word Shapley values and pairwise interactions that show *which words made
+the prompt risky, alone and in combination*.
 
-## Current milestone
+## 🚀 Live demo
 
-### A0: Data versioning
+The service runs on Google Cloud Run:
+**<https://shapiq-api-268593597387.europe-west1.run.app>**
 
-A0 is complete. DVC is configured with a Google Cloud Storage remote:
+Type a prompt in the web UI to get its risk score, or explore the
+[interactive API docs](https://shapiq-api-268593597387.europe-west1.run.app/docs).
 
-```text
-storage gs://prompt_classifier_mlops
-```
+## ✨ Features
 
-The raw snapshot is tracked through a standalone DVC file:
+- **Prompt-risk classification** — DistilBERT fine-tuned on AdvBench,
+  HarmBench, WildGuardMix, ToxicChat and BeaverTails
+- **Explainable predictions** — per-word Shapley values and pairwise
+  interactions via KernelSHAPIQ, served as an API endpoint
+- **Web interface** — dependency-free single-page UI served by the same
+  container
+- **Reproducible pipeline** — uv-locked environment, DVC-versioned data on
+  GCS, Hydra configuration, Dockerized training and serving
+- **Experiment tracking** — PyTorch Lightning training with W&B logging and
+  a Bayesian hyperparameter sweep
+- **Production monitoring** — metrics, Evidently drift
+  dashboard, and Cloud Monitoring email alerts
 
-```text
-data/raw.dvc
-```
-
-Processed data, the served model, and metrics are declared as pipeline outputs
-in `dvc.yaml` and recorded in `dvc.lock`; they do not have separate `.dvc`
-files.
-
-### A1: Split and training
-
-A1 is complete. The Hydra/DVC pipeline splits the normalized prompt-risk
-dataset, trains a DistilBERT classifier with PyTorch Lightning, logs metrics to
-W&B, and saves model and metrics artifacts.
-
-Current inputs and outputs:
-
-```text
-Input:
-  data/processed/prompt_risk_dataset.jsonl
-
-Outputs:
-  data/processed/train.jsonl
-  data/processed/val.jsonl
-  data/processed/test.jsonl
-  models/prompt_risk_distilbert/
-  reports/metrics.json
-```
-
-Hydra provides three hardware profiles:
-
-```text
-local       one auto-selected device, 32-bit
-single_gpu  one CUDA GPU, 16-bit mixed precision
-ddp         two CUDA GPUs on one node, 16-bit mixed precision
-```
-
-Direct training defaults to `local`:
+## ⚡ Quick start
 
 ```bash
-uv run python -m shapiq_attribution.train
-uv run python -m shapiq_attribution.train hardware=single_gpu
+git clone git@github.com:ssophiee/shapiq-prompt-risk-attribution.git
+cd shapiq-prompt-risk-attribution
+uv sync                # env + all locked dependencies
+uv run pytest tests/   # offline test suite — no data or model needed
 ```
 
-The canonical DVC model producer is the two-GPU stage:
+Continue with [Getting started](getting-started.md) for data access, serving
+and Docker.
 
-```bash
-uv run dvc repro train_vertex_ddp
-```
+## 📊 At a glance
 
-That command requires two CUDA GPUs because the stage explicitly selects
-`hardware=ddp`.
+| | |
+| --- | --- |
+| Model | DistilBERT (sequence classification, 2 labels) |
+| Training data | 5 public safety datasets, deduplicated |
+| Test suite | 84 offline tests, ~10 s |
+| Load test | 266 requests, 0 failures, `/predict` p99 520 ms |
+| Serving | Cloud Run (2 vCPU / 2 GiB, scale-to-zero) |
 
-### Model handoff
+## 🗺️ Where to go next
 
-Person B can use the trained prototype classifier through `PromptRiskPredictor`:
-
-```python
-from shapiq_attribution.model import PromptRiskPredictor
-
-predictor = PromptRiskPredictor.from_pretrained(
-    "models/prompt_risk_distilbert",
-    max_length=128,
-    device="cpu",
-)
-
-p_risky = predictor("masked prompt text")
-```
-
-The predictor is the intended handoff interface for attribution value functions:
-
-```text
-masked prompt -> P(risky)
-```
-
-## Useful commands
-
-```bash
-uv sync --extra cpu
-uv run dvc pull
-uv run dvc status
-uv run dvc repro prepare_dataset split_data
-uv run dvc repro train_vertex_ddp  # requires two CUDA GPUs
-uv run pytest tests/
-uv run ruff check . --fix
-uv run ruff format .
-```
+- [Getting started](getting-started.md) — full setup, data access, Docker
+- [API](api.md) — endpoints and request/response examples
+- [Training](training.md) — pipeline, hardware profiles, experiment tracking
+- [Monitoring](monitoring.md) — drift detection, metrics, alerting
+- [Project structure](structure.md) — repository layout
+- [Code reference](reference.md) — generated from docstrings

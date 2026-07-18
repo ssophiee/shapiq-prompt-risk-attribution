@@ -36,6 +36,21 @@ def test(ctx: Context) -> None:
 
 
 @task
+def load_test(
+    ctx: Context,
+    host: str = "https://shapiq-api-268593597387.europe-west1.run.app",
+    users: int = 10,
+    duration: str = "2m",
+) -> None:
+    """Load test the API with locust (headless). Use --host for a local server."""
+    ctx.run(
+        f"uv run locust -f locustfile.py --headless -u {users} -r 2 -t {duration} --host {host}",
+        echo=True,
+        pty=not WINDOWS,
+    )
+
+
+@task
 def build_baseline(ctx: Context) -> None:
     """Snapshot the training-set feature distribution for drift monitoring."""
     ctx.run(

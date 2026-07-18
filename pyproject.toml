@@ -58,6 +58,7 @@ dev = [
     "mypy==1.19.1",
     "mkdocs-material==9.7.1",
     "mkdocstrings-python==2.0.1",
+    "locust>=2.45.0",
 ]
 
 # CPU-only torch on Linux: the default PyPI wheel drags in ~7 GB of CUDA
