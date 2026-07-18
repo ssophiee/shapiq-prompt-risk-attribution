@@ -1,0 +1,4 @@
+# @package profiling
+mode: disabled
+dirpath: outputs/profiling
+filename: training-profile

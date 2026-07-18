@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - hardware: local
+  - profiling: disabled
 
 data:
   input_path: data/processed/prompt_risk_dataset.jsonl
@@ -31,6 +32,8 @@ training:
   precision: 32-true
   accumulate_grad_batches: 1
   deterministic: false
+  dynamic_padding: true
+  length_grouped_batching: true
   num_workers: 0
   pin_memory: false
   persistent_workers: false

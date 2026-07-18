@@ -1,0 +1,4 @@
+# @package profiling
+mode: simple
+dirpath: outputs/profiling
+filename: simple-profile

@@ -18,6 +18,7 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
 )
 from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.profilers import Profiler, PyTorchProfiler, SimpleProfiler
 from omegaconf import DictConfig, OmegaConf
 
 from shapiq_attribution.lightning_data_module import PromptRiskDataModule
@@ -137,6 +138,47 @@ def _create_wandb_logger(
     return logger
 
 
+def _create_profiler(cfg: DictConfig) -> Profiler | None:
+    """Create the configured Lightning profiler.
+
+    Args:
+        cfg: Hydra configuration.
+
+    Returns:
+        Configured profiler or ``None`` when profiling is disabled.
+
+    Raises:
+        ValueError: If the configured profiler mode is unsupported.
+    """
+    mode = str(cfg.profiling.mode)
+    if mode == "disabled":
+        return None
+    if mode not in {"simple", "pytorch"}:
+        raise ValueError("profiling.mode must be one of: disabled, simple, pytorch")
+
+    dirpath = Path(to_absolute_path(cfg.profiling.dirpath))
+    dirpath.mkdir(parents=True, exist_ok=True)
+    filename = str(cfg.profiling.filename)
+
+    if mode == "simple":
+        return SimpleProfiler(
+            dirpath=dirpath,
+            filename=filename,
+        )
+    if mode == "pytorch":
+        return PyTorchProfiler(
+            dirpath=dirpath,
+            filename=filename,
+            row_limit=int(cfg.profiling.row_limit),
+            record_shapes=bool(cfg.profiling.record_shapes),
+            group_by_input_shapes=bool(cfg.profiling.record_shapes),
+            profile_memory=bool(cfg.profiling.profile_memory),
+            with_stack=bool(cfg.profiling.with_stack),
+            export_to_chrome=True,
+        )
+    raise AssertionError("unreachable")
+
+
 def train_model(cfg: DictConfig) -> dict[str, dict[str, float]]:
     """Train and evaluate the configured prompt-risk classifier.
 
@@ -162,6 +204,9 @@ def train_model(cfg: DictConfig) -> dict[str, dict[str, float]]:
         num_workers=int(cfg.training.num_workers),
         pin_memory=bool(cfg.training.pin_memory),
         persistent_workers=bool(cfg.training.persistent_workers),
+        dynamic_padding=bool(cfg.training.dynamic_padding),
+        length_grouped_batching=bool(cfg.training.length_grouped_batching),
+        seed=int(cfg.training.seed),
         tokenizer=tokenizer,
     )
     model = PromptRiskLightningModule(
@@ -182,6 +227,7 @@ def train_model(cfg: DictConfig) -> dict[str, dict[str, float]]:
     )
 
     logger = _create_wandb_logger(cfg)
+    profiler = _create_profiler(cfg)
 
     callbacks: list[Callback] = [checkpoint_callback]
     if logger is not False:
@@ -202,6 +248,7 @@ def train_model(cfg: DictConfig) -> dict[str, dict[str, float]]:
         log_every_n_steps=int(cfg.training.log_every_n_steps),
         logger=logger,
         callbacks=callbacks,
+        profiler=profiler,
     )
 
     resume_from = cfg.checkpoint.resume_from

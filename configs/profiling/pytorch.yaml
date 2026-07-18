@@ -1,0 +1,8 @@
+# @package profiling
+mode: pytorch
+dirpath: outputs/profiling
+filename: pytorch-profile
+row_limit: 30
+record_shapes: true
+profile_memory: true
+with_stack: false

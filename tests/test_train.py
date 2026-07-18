@@ -10,12 +10,14 @@ import lightning as L
 import pytest
 import torch
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.profilers import PyTorchProfiler, SimpleProfiler
 from omegaconf import OmegaConf
 from shapiq_attribution.data import PromptRiskTextDataset, make_prompt_risk_example
 from shapiq_attribution.evaluate import compute_metrics
-from shapiq_attribution.lightning_data_module import PromptRiskDataModule
+from shapiq_attribution.lightning_data_module import LengthGroupedSampler, PromptRiskDataModule
 from shapiq_attribution.lightning_module import PromptRiskLightningModule
 from shapiq_attribution.train import (
+    _create_profiler,
     _create_wandb_logger,
     _load_wandb_api_key_from_secret,
 )
@@ -39,6 +41,27 @@ class DummyTokenizer:
         return {
             "input_ids": torch.ones((1, max_length), dtype=torch.long),
             "attention_mask": torch.ones((1, max_length), dtype=torch.long),
+        }
+
+
+class DynamicPaddingTokenizer:
+    """Tokenizer stub that pads a batch only to its longest prompt."""
+
+    def __call__(
+        self,
+        text: list[str],
+        truncation: bool,
+        padding: str,
+        max_length: int,
+        return_tensors: str,
+    ) -> dict[str, torch.Tensor]:
+        """Return tensors whose width follows the longest whitespace-tokenized prompt."""
+        del truncation, return_tensors
+        assert padding == "longest"
+        sequence_length = min(max(len(prompt.split()) + 2 for prompt in text), max_length)
+        return {
+            "input_ids": torch.ones((len(text), sequence_length), dtype=torch.long),
+            "attention_mask": torch.ones((len(text), sequence_length), dtype=torch.long),
         }
 
 
@@ -218,6 +241,57 @@ def test_prompt_risk_data_module_provides_all_dataloaders(
     assert data_module.persistent_workers is False
 
 
+def test_prompt_risk_data_module_dynamically_pads_each_batch(tmp_path: Path) -> None:
+    """Test that optimized training avoids padding every prompt to max_length."""
+    records = [
+        {"prompt": "short prompt", "label": 0, "source": "fixture"},
+        {"prompt": "a somewhat longer risky prompt", "label": 1, "source": "fixture"},
+    ]
+    serialized_records = "\n".join(json.dumps(record) for record in records)
+    paths = [tmp_path / f"{split}.jsonl" for split in ("train", "val", "test")]
+    for path in paths:
+        path.write_text(f"{serialized_records}\n", encoding="utf-8")
+
+    data_module = PromptRiskDataModule(
+        train_path=paths[0],
+        val_path=paths[1],
+        test_path=paths[2],
+        model_name="dummy-model",
+        max_length=32,
+        batch_size=2,
+        dynamic_padding=True,
+        tokenizer=DynamicPaddingTokenizer(),
+    )
+
+    data_module.setup(stage="fit")
+    batch = next(iter(data_module.train_dataloader()))
+
+    assert batch["input_ids"].shape == torch.Size([2, 7])
+    assert batch["attention_mask"].shape == torch.Size([2, 7])
+    assert batch["labels"].shape == torch.Size([2])
+
+
+def test_length_grouped_sampler_is_complete_reproducible_and_epoch_aware() -> None:
+    """Test that length grouping preserves all examples and reshuffles each epoch."""
+    lengths = list(range(1, 101))
+    sampler = LengthGroupedSampler(lengths=lengths, batch_size=5, seed=12)
+
+    first_epoch = list(sampler)
+    repeated_first_epoch = list(sampler)
+    sampler.set_epoch(1)
+    second_epoch = list(sampler)
+
+    assert sorted(first_epoch) == list(range(100))
+    assert first_epoch == repeated_first_epoch
+    assert first_epoch != second_epoch
+    batch_ranges = [
+        max(lengths[index] for index in first_epoch[start : start + 5])
+        - min(lengths[index] for index in first_epoch[start : start + 5])
+        for start in range(0, len(first_epoch), 5)
+    ]
+    assert sum(batch_ranges) / len(batch_ranges) < 20
+
+
 def test_lightning_trainer_runs_end_to_end(tmp_path: Path) -> None:
     """Test one complete Lightning train, validation, and test cycle."""
     records = [
@@ -311,6 +385,65 @@ def test_wandb_logger_can_be_disabled() -> None:
     logger = _create_wandb_logger(cfg)
 
     assert logger is False
+
+
+def test_profiler_can_be_disabled() -> None:
+    """Test that the default profiler configuration has no runtime overhead."""
+    cfg = OmegaConf.create({"profiling": {"mode": "disabled"}})
+
+    profiler = _create_profiler(cfg)
+
+    assert profiler is None
+
+
+def test_simple_profiler_writes_to_configured_directory(tmp_path: Path) -> None:
+    """Test construction of the lightweight wall-clock profiler."""
+    cfg = OmegaConf.create(
+        {
+            "profiling": {
+                "mode": "simple",
+                "dirpath": str(tmp_path / "profiles"),
+                "filename": "simple",
+            }
+        }
+    )
+
+    profiler = _create_profiler(cfg)
+
+    assert isinstance(profiler, SimpleProfiler)
+    assert (tmp_path / "profiles").is_dir()
+
+
+def test_pytorch_profiler_uses_detailed_settings(tmp_path: Path) -> None:
+    """Test construction of the operator and memory profiler."""
+    cfg = OmegaConf.create(
+        {
+            "profiling": {
+                "mode": "pytorch",
+                "dirpath": str(tmp_path / "profiles"),
+                "filename": "operators",
+                "row_limit": 12,
+                "record_shapes": True,
+                "profile_memory": True,
+                "with_stack": False,
+            }
+        }
+    )
+
+    profiler = _create_profiler(cfg)
+
+    assert isinstance(profiler, PyTorchProfiler)
+    assert profiler._row_limit == 12
+    assert profiler._profiler_kwargs["record_shapes"] is True
+    assert profiler._profiler_kwargs["profile_memory"] is True
+
+
+def test_profiler_rejects_unknown_mode() -> None:
+    """Test that a misspelled profiler mode fails before training starts."""
+    cfg = OmegaConf.create({"profiling": {"mode": "unknown"}})
+
+    with pytest.raises(ValueError, match="profiling.mode"):
+        _create_profiler(cfg)
 
 
 def test_wandb_api_key_is_loaded_from_secret_manager(

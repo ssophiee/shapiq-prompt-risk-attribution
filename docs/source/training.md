@@ -44,6 +44,39 @@ hyperparameter sweep maximising `val/roc_auc`. In containers the W&B API key
 can be injected from GCP Secret Manager (`WANDB_API_KEY_SECRET`), so no
 credentials live in code or images.
 
+## Profiling and optimized batching
+
+Profiling is optional and selected through Hydra. Normal training uses
+`profiling=disabled`; `profiling=simple` records Lightning action timings,
+while `profiling=pytorch` records operator shapes, CPU time and memory:
+
+```bash
+uv run python -m shapiq_attribution.train profiling=simple
+uv run python -m shapiq_attribution.train profiling=pytorch
+```
+
+A CPU baseline over 100 training batches showed that data loading used less
+than 1% of fit time, while the forward and backward passes dominated. The
+operator profile showed that every DistilBERT batch had shape
+`[16, 128, 768]`. The 27,894 training prompts contain only 53.91 tokens on
+average (median 21), so fixed padding wasted 57.88% of token positions.
+
+Training now tokenizes complete batches, pads only to the longest sequence in
+each batch, and uses deterministic length-grouped sampling. The sampler still
+reshuffles every epoch and Lightning wraps it for distributed training. Over
+the same 100 CPU batches, the mean padded width fell from 128 to 56.67 tokens
+and the measured fit time fell from 62.527 s to 31.360 s:
+
+| Measurement | Fixed padding | Optimized | Change |
+| --- | ---: | ---: | ---: |
+| Mean padded batch width | 128.00 | 56.67 | -55.73% |
+| Total fit profiler time | 62.527 s | 31.360 s | -49.85% |
+| Training-batch time | 59.750 s | 28.335 s | -52.58% |
+| Mean `training_step` time | 205.37 ms | 90.26 ms | -56.05% |
+
+Profiler traces and temporary checkpoints are written below
+`outputs/profiling/`, which is ignored by Git.
+
 ## Data versioning
 
 DVC with a Google Cloud Storage remote (`gs://prompt_classifier_mlops`). Raw

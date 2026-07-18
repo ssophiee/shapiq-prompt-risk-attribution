@@ -68,7 +68,10 @@ will check the repositories and the code to verify your answers.
 * [x] Build the docker files locally and make sure they work as intended (M10)
 * [x] Write one or multiple configurations files for your experiments (M11)
 * [x] Used Hydra to load the configurations and manage your hyperparameters (M11)
-* [ ] Use profiling to optimize your code (M12)
+* [x] Use profiling to optimize your code (M12)
+    * *Lightning Simple/PyTorch profiling found fixed 128-token padding in every DistilBERT batch while prompts averaged
+      53.91 tokens. Dynamic batch padding plus deterministic length-grouped sampling reduced the mean padded width to
+      56.67 tokens and cut a matched 100-batch CPU profile from 62.527 s to 31.360 s (-49.85%).*
 * [x] Use logging to log important events in your code (M14)
 * [x] Use Weights & Biases to log training progress and other important metrics/artifacts in your code (M14)
 * [x] Consider running a hyperparameter optimization sweep (M14)
@@ -255,7 +258,7 @@ These concepts are important as a project and team grow. A shared format keeps t
 >
 > Answer:
 
-In total we have implemented 84 tests across 11 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, data splitting, and the Lightning training setup including an end-to-end trainer run on a tiny dataset.
+In total we have implemented 90 tests across 11 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, data splitting, and the Lightning training setup including profiling, optimized batching and an end-to-end trainer run on a tiny dataset.
 
 ### Question 8
 

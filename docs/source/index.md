@@ -48,7 +48,7 @@ and Docker.
 | --- | --- |
 | Model | DistilBERT (sequence classification, 2 labels) |
 | Training data | 5 public safety datasets, deduplicated |
-| Test suite | 84 offline tests, ~10 s |
+| Test suite | 90 offline tests, ~10 s |
 | Load test | 266 requests, 0 failures, `/predict` p99 520 ms |
 | Serving | Cloud Run (2 vCPU / 2 GiB, scale-to-zero) |
 
