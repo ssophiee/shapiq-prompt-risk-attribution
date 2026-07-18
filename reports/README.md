@@ -158,7 +158,7 @@ NaN
 >
 > Answer:
 
-- Sofiia Nikolenko (XXXXX)
+- Sofiia Nikolenko (13027681)
 - Lennart Lamberts (12166892)
 
 ### Question 3
@@ -750,7 +750,9 @@ manual steps.
 >
 > Answer:
 
---- question 30 fill here ---
+Sofiia (13027681): My biggest struggle was optimizing time during inference. After deployment, our own alerting fired on 5xx errors: the logs showed slow cold starts because the container re-installed dependencies at startup, which I fixed by starting the venv binaries directly in the entrypoint. The `/attribute` endpoint was also challenging: exact Shapley computation scales exponentially with prompt length, taking more time during inference, so I switched to the KernelSHAPIQ approximator with a configurable budget and a longer Cloud Run timeout.
+
+Lennart (12166892): --- fill here ---
 
 ### Question 31
 
@@ -768,4 +770,10 @@ manual steps.
 > *We have used ChatGPT to help debug our code. Additionally, we used GitHub Copilot to help write some of our code.*
 > Answer:
 
---- question 31 fill here ---
+Sofiia Nikolenko (13027681) set up the initial cookiecutter project structure and implemented the scientific core: the shapiq cooperative-game formulation and the attribution pipeline computing Shapley values and pairwise interactions. She developed the FastAPI application (`/predict`, `/attribute`) with its embedded web frontend, containerized it, and deployed it to Cloud Run in the serving GCP project. She also built the monitoring stack — prediction logging to GCS, the Evidently drift dashboard at `/monitoring`, Prometheus metrics, and the Cloud Monitoring alert policies — wrote the API unit tests, performed load testing with Locust, and published the MkDocs documentation site to GitHub Pages.
+
+Lennart Lamberts (12166892) built the data layer: downloading, normalizing, deduplicating and splitting the five prompt-safety datasets, and setting up DVC with the GCS remote in the data/training GCP project. He implemented the Lightning training pipeline with Hydra configuration, W&B logging and the hyperparameter sweep, performed the profiling optimization of data loading, created the CPU/GPU training Docker images and the CI workflows (linting, tests, Docker builds, and the continuous data-validation workflow), and ran cloud training on Compute Engine and the final Vertex AI DDP job.
+
+We reviewed and used each other's parts to ensure both of us understand the full pipeline.
+
+We used generative AI in the project: Claude (via Claude Code) served as a coding assistant for writing and debugging code. All AI-generated code and text was reviewed, tested and edited by us before being committed.
