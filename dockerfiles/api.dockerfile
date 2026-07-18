@@ -40,7 +40,10 @@ EXPOSE 8000
 
 # Liveness/readiness probe (stdlib only — no extra packages needed).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD uv run python -c "import urllib.request,sys; \
+    CMD /app/.venv/bin/python -c "import urllib.request,sys; \
 sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
 
-ENTRYPOINT ["uv", "run", "uvicorn", "shapiq_attribution.api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start the venv binary directly: `uv run` would re-sync the environment on
+# every container start — pulling the dev group (mypy, ruff, mkdocs, ...) that
+# the image was built without and adding ~85 s to every Cloud Run cold start.
+ENTRYPOINT ["/app/.venv/bin/uvicorn", "shapiq_attribution.api:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -50,4 +50,7 @@ COPY models/prompt_risk_distilbert /app/models/prompt_risk_distilbert
 # Cloud Run injects $PORT (default 8080) and routes traffic to it. Use shell form
 # so $PORT expands; `exec` makes uvicorn PID 1 for clean shutdown signals.
 # (Cloud Run runs its own startup/liveness probes, so no Docker HEALTHCHECK here.)
-CMD exec uv run uvicorn shapiq_attribution.api:app --host 0.0.0.0 --port ${PORT:-8080}
+# Start the venv binary directly: `uv run` would re-sync the environment on
+# every container start — pulling the dev group (mypy, ruff, mkdocs, ...) that
+# the image was built without and adding ~85 s to every cold start.
+CMD exec /app/.venv/bin/uvicorn shapiq_attribution.api:app --host 0.0.0.0 --port ${PORT:-8080}

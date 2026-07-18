@@ -373,7 +373,7 @@ In a larger team, branches and pull requests would improve this setup. Branches 
 >
 > Answer:
 
-We developed three images: training (`dockerfiles/train.dockerfile`), a GPU training variant (`train.gpu.dockerfile`), and serving (`api.dockerfile`), which packages the FastAPI app, the web frontend and the monitoring endpoints. All are multi-stage builds on `uv` base images installing from the committed lockfile (`uv sync --frozen`), with a CPU-only PyTorch index override that keeps the images ~7 GB smaller. `invoke` tasks wrap the build commands, e.g. `invoke docker-build-api`. To run them:
+We created three images: training (`dockerfiles/train.dockerfile`), a GPU training variant (`train.gpu.dockerfile`), and serving (`api.dockerfile`), which packages the FastAPI app, the web frontend and the monitoring endpoints. `invoke` tasks wrap the build commands, e.g. `invoke docker-build-api`. To run them:
 
 ```bash
 # training (Hydra config baked in, W&B offline by default)
@@ -413,7 +413,7 @@ GitHub Actions rebuilds the training and API images on every push to `main`, and
 >
 > Answer:
 
---- question 17 fill here ---
+We used five GCP services. **Cloud Storage** provides object storage in buckets: one bucket (`gs://prompt_classifier_mlops`) is our DVC remote holding the versioned datasets and the trained model, and a second one collects the input/output rows that the deployed API logs on every prediction, which feed our drift monitoring. **Cloud Run** is a container platform that runs our API image, it hosts the FastAPI service with the frontend, the Prometheus `/metrics` endpoint and the `/monitoring` drift dashboard. **Cloud Build** builds the container image directly from our source in the cloud when we deploy (`gcloud run deploy --source`), so no local docker build or push is needed. **Artifact Registry** stores the built container images that Cloud Run pulls from. Finally, **Cloud Monitoring** collects Cloud Run's request count and latency metrics and runs our two alert policies, emailing us on any 5xx responses or when p95 latency exceeds 30 s.
 
 ### Question 18
 
