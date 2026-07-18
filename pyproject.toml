@@ -67,4 +67,8 @@ line-length = 120
 lint.select = ["I", "E", "F", "B", "UP"]
 
 [tool.coverage.run]
+# Measure all project source, including modules no test imports (reported at
+# 0%). tasks.py (invoke wrappers around shell commands) and the course's
+# reports/report.py are deliberately out of scope.
+source = ["src", "experiments"]
 omit = ["tests/*"]

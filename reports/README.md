@@ -121,11 +121,11 @@ will check the repositories and the code to verify your answers.
 
 * [x] Write some documentation for your application (M32)
     * *MkDocs site (`docs/`), plus `API.md` (full API guide incl. a "what is used for what" stack table), `DOCKER.md`, and `deploy/README.md`.*
-* [ ] Publish the documentation to GitHub Pages (M32)
-* [ ] Revisit your initial project description. Did the project turn out as you wanted?
+* [x] Publish the documentation to GitHub Pages (M32)
+* [x] Revisit your initial project description. Did the project turn out as you wanted?
 * [x] Create an architectural diagram over your MLOps pipeline
     * *Mermaid diagram in the root `README.md` (MLOps workflow section): training + DVC, CI/CD to Cloud Run, serving, metrics, GCS collection, drift and alerting.*
-* [ ] Make sure all group members have an understanding about all parts of the project
+* [x] Make sure all group members have an understanding about all parts of the project
 * [x] Uploaded all your code to GitHub
 
 ## Group information
@@ -135,7 +135,7 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 1 fill here ---
+NaN
 
 ### Question 2
 > **Enter the study number for each member in the group**
@@ -146,7 +146,8 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 2 fill here ---
+- Sofiia Nikolenko (XXXXX)
+- Lennart Lamberts (XXXXX)
 
 ### Question 3
 > **Did you end up using any open-source frameworks/packages not covered in the course during your project? If so**
@@ -160,7 +161,7 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 3 fill here ---
+We used three third-party packages not covered in the course. The most central one is `shapiq`, a library for computing Shapley values and Shapley interaction indices. It is the scientific core of our project: we model the steps of a chain-of-thought as players in a cooperative game (subclassing `shapiq.Game`) and use its `ExactComputer` to compute first-order Shapley values and pairwise k-SII interactions, which tells us how much each reasoning step — alone and in combination with others — contributes to the model's risk score. Second, we used Hugging Face `transformers` to load a pre-trained DistilBERT via `AutoModelForSequenceClassification`/`AutoTokenizer` and fine-tune it as our prompt-risk classifier, including its `get_linear_schedule_with_warmup` learning-rate scheduler; this let us get a strong text classifier without implementing the architecture ourselves. Third, we used Hugging Face `datasets` to programmatically download our raw data (`walledai/AdvBench` and `walledai/HarmBench`) with `load_dataset` inside our `data.py`, instead of downloading files manually — making data acquisition reproducible for every team member and in CI. Together these packages let us focus on the MLOps side of the project rather than on modeling and data-fetching plumbing.
 
 ## Coding environment
 
@@ -180,7 +181,16 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 4 fill here ---
+We used `uv` to manage our dependencies. Runtime dependencies are declared in `pyproject.toml`, with development tools (pytest, ruff, mypy, pre-commit, mkdocs, ...) separated into a `dev` dependency group. The exact resolved versions are in the committed `uv.lock` file, and `.python-version` pins the interpreter to Python 3.13, so every machine resolves to an identical environment. We also used a `[tool.uv.sources]` override that installs CPU-only PyTorch wheels on Linux, keeping Docker images and CI runners ~7 GB slimmer. A new team member would run:
+
+```bash
+git clone <repo-url> && cd shapiq-cot-attribution
+uv sync                                    # creates .venv with exact locked versions (incl. dev group)
+uv run dvc pull                            # fetch DVC-tracked data + trained model from GCS
+uv run pre-commit install --install-hooks  # enable the linting/formatting hooks
+```
+
+`uv sync` installs the Python version, creates the virtual environment, and installs everything from the lockfile in one step.
 
 ### Question 5
 
@@ -211,7 +221,9 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 6 fill here ---
+We used `ruff` for both linting and formatting, configured in `pyproject.toml` (120-char lines; pyflakes, pycodestyle, isort, bugbear and pyupgrade rule sets). It is enforced at two levels: pre-commit hooks run `ruff check --fix` and `ruff format` on every commit, and a CI workflow (`ci-lint.yaml`) re-runs `ruff check` and `ruff format --check` so nothing unformatted reaches `main`. For typing, our functions carry type hints (e.g. `run_shapiq(cot_steps: list[str], value_fn) -> tuple`). For documentation, key modules and functions have docstrings.
+
+These concepts are important as a project and team grow. A shared format keeps the code readable and consistent independent of who wrote it, and allows for focusing on code logic rather than style. Type hints make it clear what a function expects and returns. Docstrings and documentation help team members understand parts of the code they did not write themselves, without having to ask the original author.
 
 ## Version control
 
@@ -230,7 +242,7 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 7 fill here ---
+In total we have implemented 77 tests across 11 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, data splitting, and training helpers.
 
 ### Question 8
 
@@ -245,7 +257,9 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 8 fill here ---
+The total code coverage is 68%, measured over all our Python source code. The main logic is fully covered: the shapiq game layer, attribution value function, model utilities, evaluation metrics and plotting are at 100%, and data loading at 98%. The score is mainly lowered by `train.py` and `pipeline.py` (both 0%), which require loading a real language model to be tested meaningfully.Given the well-tested core, we trust the codebase for its intended use.
+
+Even with 100% coverage we would not consider the code error free: coverage only shows that a line ran during a test, not that the outcome was asserted correctly. For example, edge cases can pass full coverage, as do issues that only appear in production such as unexpected inputs or drifting data — which is why we also monitor the deployed model instead of relying on tests alone.
 
 ### Question 9
 
@@ -260,7 +274,9 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 9 fill here ---
+No, we worked directly on `main`. As a two-person team we split the project into clearly separated areas (training pipeline vs. serving/monitoring), committed small and frequently, and coordinated directly, so we rarely touched the same files and merge conflicts were not a practical problem. Our CI still ran the linting, test and Docker-build workflows on every push to `main`, and the workflows are additionally configured with `pull_request` triggers, so a PR-based flow was prepared even though we did not use it.
+
+In a larger team, branches and pull requests would improve this setup. Branches separate work in progress, so `main` always stays in a deployable state and a faulty feature can't affect a deployment. Pull requests then add a quality check before merging: CI must pass before merging (instead of after the code already landed on `main`), a second person reviews the change and checks for bugs, and the PR itself documents why a change was made. Hence, it is impossible for untested or unreviewed code to reach the branch that images are built from.
 
 ### Question 10
 
@@ -275,7 +291,6 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 10 fill here ---
 
 ### Question 11
 
@@ -358,8 +373,16 @@ will check the repositories and the code to verify your answers.
 >
 > Answer:
 
---- question 15 fill here ---
+We developed three images: training (`dockerfiles/train.dockerfile`), a GPU training variant (`train.gpu.dockerfile`), and serving (`api.dockerfile`), which packages the FastAPI app, the web frontend and the monitoring endpoints. All are multi-stage builds on `uv` base images installing from the committed lockfile (`uv sync --frozen`), with a CPU-only PyTorch index override that keeps the images ~7 GB smaller. `invoke` tasks wrap the build commands, e.g. `invoke docker-build-api`. To run them:
 
+```bash
+# training (Hydra config baked in, W&B offline by default)
+docker run --rm -v "$PWD/data:/app/data" -v "$PWD/models:/app/models" shapiq-train:latest
+# serving, with the DVC-pulled model mounted read-only
+docker run --rm -p 8000:8000 -v "$PWD/models:/app/models:ro" shapiq-api:latest
+```
+
+GitHub Actions rebuilds the training and API images on every push to `main`, and the API image is what we deploy to Cloud Run. Link to docker files: [dockerfiles/](https://github.com/ssophiee/shapiq-prompt-risk-attribution/tree/main/dockerfiles)
 ### Question 16
 
 > **When running into bugs while trying to run your experiments, how did you perform debugging? Additionally, did you**
