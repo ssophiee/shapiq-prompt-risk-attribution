@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import wandb
+
 from shapiq_attribution.data import PromptRiskExample, load_prompt_risk_jsonl
 from shapiq_attribution.evaluate import compute_metrics
 from shapiq_attribution.model import PromptRiskPredictor
