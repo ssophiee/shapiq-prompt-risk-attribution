@@ -173,7 +173,17 @@ NaN
 >
 > Answer:
 
-We used three third-party packages not covered in the course. The most central one is `shapiq`, a library for computing Shapley values and Shapley interaction indices. It is the scientific core of our project: we model the steps of a chain-of-thought as players in a cooperative game (subclassing `shapiq.Game`) and use its `ExactComputer` to compute first-order Shapley values and pairwise k-SII interactions, which tells us how much each reasoning step — alone and in combination with others — contributes to the model's risk score. Second, we used Hugging Face `transformers` to load a pre-trained DistilBERT via `AutoModelForSequenceClassification`/`AutoTokenizer` and fine-tune it as our prompt-risk classifier, including its `get_linear_schedule_with_warmup` learning-rate scheduler; this let us get a strong text classifier without implementing the architecture ourselves. Third, we used Hugging Face `datasets` to programmatically download our raw data (`walledai/AdvBench` and `walledai/HarmBench`) with `load_dataset` inside our `data.py`, instead of downloading files manually — making data acquisition reproducible for every team member and in CI. Together these packages let us focus on the MLOps side of the project rather than on modeling and data-fetching plumbing.
+We used three third-party packages not covered in the course. The most central is `shapiq`, which computes Shapley
+values and interaction indices. It is the scientific core of our project: we model chain-of-thought steps as players
+in a cooperative game by subclassing `shapiq.Game`. Its `ExactComputer` computes first-order Shapley values and
+pairwise k-SII interactions, showing how each reasoning step, alone and with others, contributes to the risk score.
+
+We also used Hugging Face `transformers` to load and fine-tune DistilBERT through
+`AutoModelForSequenceClassification` and `AutoTokenizer`, together with `get_linear_schedule_with_warmup`. This
+provided a strong text classifier without implementing the architecture ourselves. Finally, Hugging Face `datasets`
+uses `load_dataset` in `data.py` to download AdvBench and HarmBench programmatically instead of manually. This made
+data acquisition reproducible for each team member and in CI. Together these packages let us focus on the MLOps
+pipeline rather than modeling and data-fetching plumbing.
 
 ## Coding environment
 
@@ -264,7 +274,7 @@ These concepts are important as a project and team grow. A shared format keeps t
 >
 > Answer:
 
-In total we have implemented 93 tests across 12 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, split integrity, continuous-data statistics and the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, and the Lightning training setup including profiling, optimized batching and an end-to-end trainer run on a tiny dataset.
+We implemented 100 tests across 13 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, split integrity, continuous-data statistics and the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, and the Lightning training setup including profiling, optimized batching and an end-to-end trainer run on a tiny dataset.
 
 ### Question 8
 
@@ -279,7 +289,7 @@ In total we have implemented 93 tests across 12 test files. Primarily we are tes
 >
 > Answer:
 
-The total code coverage is 68%, measured over all our Python source code. The main logic is fully covered: the shapiq game layer, attribution value function, model utilities, evaluation metrics and plotting are at 100%, and data loading at 98%. The score is mainly lowered by `train.py` and `pipeline.py` (both 0%), which require loading a real language model to be tested meaningfully.Given the well-tested core, we trust the codebase for its intended use.
+The total code coverage is 71%, measured over all our Python source code. The main logic is fully covered: the shapiq game layer, attribution value function, model utilities, evaluation metrics and plotting are at 100%, and data loading at 98%. The score is mainly lowered by `pipeline.py` (0%), `train.py` (49%) and `model_registry.py` (51%), whose remaining paths require complete training, command-line or external-service execution. Given the well-tested core, we trust the codebase for its intended use.
 
 Even with 100% coverage we would not consider the code error free: coverage only shows that a line ran during a test, not that the outcome was asserted correctly. For example, edge cases can pass full coverage, as do issues that only appear in production such as unexpected inputs or drifting data — which is why we also monitor the deployed model instead of relying on tests alone.
 
@@ -296,9 +306,18 @@ Even with 100% coverage we would not consider the code error free: coverage only
 >
 > Answer:
 
-For development we worked directly on `main`, without feature branches or pull requests. As a two-person team we split the project into clearly separated areas (training pipeline vs. serving/monitoring), committed small and frequently, and coordinated directly, so we rarely touched the same files and merge conflicts were not a practical problem. Our CI still ran the linting, test and Docker-build workflows on every push to `main`, and the workflows are additionally configured with `pull_request` triggers, so a PR-based flow was prepared even though we did not use it. The repository does have a second branch, `gh-pages`, but it serves a different purpose than collaboration: `mkdocs gh-deploy` pushes the built documentation site to it, and GitHub Pages hosts the docs from that branch — the branch as a deployment target rather than a line of development.
+For development we worked directly on `main`, without feature branches or pull requests. As a two-person team, we
+split the project into separate areas (training vs. serving/monitoring), committed frequently and coordinated
+directly. We therefore rarely touched the same files, and merge conflicts were not a practical problem. The linting,
+test and Docker-build workflows ran on every push to `main`, while continuous data validation ran only when DVC
+metadata or pipeline files changed. These workflows also support `pull_request` triggers, although we did not use
+them. The second branch, `gh-pages`, is not used for collaboration: `mkdocs gh-deploy` publishes the documentation
+there for GitHub Pages.
 
-In a larger team, branches and pull requests would improve this setup. Branches separate work in progress, so `main` always stays in a deployable state and a faulty feature can't affect a deployment. Pull requests then add a quality check before merging: CI must pass before merging (instead of after the code already landed on `main`), a second person reviews the change and checks for bugs, and the PR itself documents why a change was made. Hence, it is impossible for untested or unreviewed code to reach the branch that images are built from.
+In a larger team, branches would separate work in progress and help keep `main` deployable. Pull requests would add
+quality checks before merging: CI could pass before code reaches `main`, another team member could review the change,
+and the PR would document why it was made. This would reduce the risk of untested or unreviewed code reaching the
+branch from which images are built.
 
 ### Question 10
 
@@ -340,7 +359,25 @@ classifier and dataset instead of relying on manually copied local files.
 >
 > Answer:
 
---- question 11 fill here ---
+Our continuous integration is organized in six GitHub Actions workflows. The three core CI workflows run on every
+push and pull request to `main`. `ci-lint.yaml` checks the code with `ruff check` and `ruff format --check`.
+`ci-train.yaml` runs the offline tests for data processing, splitting, model construction and Lightning training,
+then builds the CPU training image. `ci-api.yaml` runs the API, monitoring and attribution tests with coverage and
+builds the serving image. Each job uses an Ubuntu runner, Python 3.13 and `uv sync --frozen --extra cpu`, so CI uses
+the committed dependency lock file.
+
+The remaining workflows cover ML-specific automation. `cml-data.yaml` runs only when DVC metadata or pipeline files
+change. It authenticates with GCP, pulls the raw snapshots, reproduces the processed splits, runs the data tests and
+uploads a statistics report; on pull requests, CML also posts the report as a comment. `stage-model.yaml` is triggered
+by a staged W&B model or manually. It pulls the DVC-versioned test set, validates the model artifact and promotes it
+to the `production` alias only if all checks pass. Finally, `monitoring.yaml` creates the Evidently drift report on a
+weekly schedule or manual trigger.
+
+We test only on `ubuntu-latest` with Python 3.13 and do not use an operating-system, Python or PyTorch matrix. We also
+use the default uv cache provided by `astral-sh/setup-uv` on GitHub-hosted runners, keyed by `uv.lock`; we do not
+configure a separate custom cache. The frozen lock file and separate offline test slices keep the workflows
+predictable. An example is the
+[training CI workflow](https://github.com/ssophiee/shapiq-prompt-risk-attribution/blob/main/.github/workflows/ci-train.yaml).
 
 ## Running code and tracking experiments
 
@@ -413,32 +450,28 @@ floating-point results, but all inputs and decisions are traceable.
 >
 > Answer:
 
-We used Weights & Biases together with Lightning to keep track of our experiments. For every run, W&B stores the
-complete Hydra configuration, including the model and optimizer settings, hardware profile, batch size and random
-seed. The first screenshot shows the overall workspace with 16 recorded runs from different stages of development:
-early local experiments, smoke tests, GPU runs, the final Vertex AI DDP training and the later model-publication runs.
-The charts make it easy to compare the learning-rate schedule, number of epochs and final test metrics. This helped us
-check whether improvements also carried over from small development runs to the complete cloud training.
+We used Weights & Biases with Lightning to track our experiments. For every run, W&B stores the complete Hydra
+configuration, including model and optimizer settings, hardware profile, batch size and seed. The first screenshot
+shows 16 runs from different development stages: local experiments, smoke tests, GPU runs, the final Vertex AI DDP
+training and later model-publication runs. The charts compare the learning-rate schedule, epochs and final test
+metrics, helping us check whether improvements transferred from small runs to complete cloud training.
 
 ![W&B overview comparing tracked runs, learning rate and test metrics](figures/wandb_all_runs1.png)
 
-The second screenshot focuses on the training process itself. The step-level loss of the final Vertex DDP run is
-naturally noisy because every point comes from a different mini-batch, but the overall downward trend is clear. The
-smoother epoch-level loss confirms that the model converged during training. We mainly used validation ROC-AUC for
-model selection because it measures how well the classifier separates risky from safe prompts without depending on
-one particular decision threshold. We also tracked precision and recall: precision tells us how often a risk warning
-is correct, while recall shows how many risky prompts are actually detected. F1 summarizes the balance between the
-two. The final model reached a validation ROC-AUC of 0.9283 and a test ROC-AUC of 0.9314, with test accuracy of 0.8456
-and F1 of 0.8121.
+The second screenshot focuses on training. The step-level loss of the final Vertex DDP run is noisy because each point
+comes from a different mini-batch, but its overall trend is downward. The smoother epoch-level loss confirms
+convergence. We used validation ROC-AUC for model selection because it measures separation of risky and safe prompts
+without depending on a decision threshold. Precision shows how often a risk warning is correct, recall how many risky
+prompts are detected, and F1 balances both. The final model reached validation ROC-AUC 0.9283, test ROC-AUC 0.9314,
+test accuracy 0.8456 and F1 0.8121.
 
 ![Training loss and validation metrics across W&B runs](figures/wandb_all_runs2.png)
 
-The third screenshot shows our Bayesian hyperparameter sweep. It was set up to compare learning rate, batch size,
-weight decay, maximum token length and the number of training epochs while maximizing validation ROC-AUC. We completed
-two sweep trials. This was enough to verify that the automated sweep setup worked and that W&B correctly recorded and
-compared the configurations. However, two trials are not enough for reliable conclusions about parameter importance,
-so we treated the sweep as an exploratory experiment rather than an exhaustive optimization. The final model was
-trained separately on Vertex AI using a stable configuration.
+The third screenshot shows our Bayesian sweep over learning rate, batch size, weight decay, maximum token length and
+training epochs, maximizing validation ROC-AUC. Two trials verified that the automated setup worked and W&B recorded
+and compared the configurations. They were insufficient for reliable conclusions about parameter importance, so the
+sweep remained exploratory rather than exhaustive. We trained the final model separately on Vertex AI with a stable
+configuration.
 
 ![Two completed trials in the W&B Bayesian sweep](figures/wandb_sweep.png)
 
@@ -478,19 +511,17 @@ GitHub Actions rebuilds the training and API images on every push to `main`, and
 >
 > Answer:
 
-When debugging, we always started with the smallest setup that could reproduce the problem. We invested
-time in deterministic unit tests to check data loading, model construction, training and serving separately. Before
-every complete training run, we first ran a short smoke test with only a few batches. We used the same approach for
-dataloaders, inspecting individual batches before adding workers or switching to distributed training. For
-cloud-specific problems, we used tracebacks, W&B logs and GCP logs. Failed and cancelled Vertex AI smoke jobs helped
-us debug DVC access, credentials, CUDA/DDP settings and the container entrypoint before the successful final DDP run.
+When debugging, we started with the smallest setup that reproduced the problem. Deterministic unit tests checked data
+loading, model construction, training and serving separately. Before complete training runs, we used short
+few-batch smoke tests. For dataloaders, we inspected individual batches before adding workers or distributed training.
+For cloud problems, tracebacks, W&B logs and GCP logs helped us debug DVC access, credentials, CUDA/DDP settings and
+the container entrypoint through failed and cancelled Vertex AI smoke jobs before the successful DDP run.
 
-We did not assume that the code was already optimal. Lightning's SimpleProfiler showed which training actions consumed
-the most time, while PyTorchProfiler recorded operator shapes, CPU time and memory use. The profiles showed that model
-forward and backward passes dominated runtime and that fixed padding expanded every batch to 128 tokens, although the
-average prompt contained only 53.91 tokens. We therefore introduced dynamic batch padding and deterministic
-length-grouped sampling. In a matched 100-batch CPU profile, the mean padded width fell to 56.67 tokens and total fit
-time decreased from 62.527 seconds to 31.360 seconds, an improvement of 49.85%.
+We did not assume the code was optimal. Lightning's SimpleProfiler measured training actions, while PyTorchProfiler
+recorded operator shapes, CPU time and memory. The profiles showed that forward and backward passes dominated runtime
+and fixed padding expanded every batch to 128 tokens although prompts averaged 53.91 tokens. We introduced dynamic
+batch padding and deterministic length-grouped sampling. In a matched 100-batch CPU profile, mean padded width fell to
+56.67 tokens and fit time decreased from 62.527 to 31.360 seconds, an improvement of 49.85%.
 
 ## Working in the cloud
 
@@ -552,9 +583,9 @@ which used both GPUs with DDP and 16-bit mixed precision.
 
 <!-- Add 1-2 screenshots of the GCP buckets here. -->
 
-! [Our buckets on GCP](figures/gcp_bucket1.png)
+![Our buckets on GCP](figures/gcp_bucket1.png)
 
-! [Inside our training data bucket](figures/gcp_bucket2.png)
+![Inside our training data bucket](figures/gcp_bucket2.png)
 
 ### Question 20
 
@@ -563,9 +594,9 @@ which used both GPUs with DDP and 16-bit mixed precision.
 >
 > Answer:
 
-! [Our artifact registry](figures/artifact_registry1.png)
+![Our artifact registry](figures/artifact_registry1.png)
 
-! [Training image inside the registry](figures/artifact_registry1.png)
+![Training image inside the registry](figures/artifact_registry2.png)
 
 ### Question 21
 
@@ -745,7 +776,7 @@ configuration and DVC metadata; the larger raw/processed files, trained DistilBE
 `prompt_classifier_mlops` Cloud Storage bucket. This makes a Git revision and `dvc.lock` sufficient to recover the
 complete training state.
 
-For training, the same CUDA container can run on the terminated single-T4 Compute Engine VM or as a managed Vertex AI
+Cloud training first ran in a CUDA container on a single-T4 Compute Engine VM and later as a managed Vertex AI
 Custom Job. The final path used Vertex AI with two T4 GPUs and Lightning DDP. It pulled the versioned splits from GCS,
 logged the resolved configuration and metrics to W&B, selected the best checkpoint by validation ROC-AUC and pushed
 the model, metrics and updated DVC metadata back to Cloud Storage. Secret Manager supplied the W&B credential without
@@ -754,7 +785,10 @@ putting it into code or the image.
 On every push or pull request, GitHub Actions runs ruff, the offline pytest slices and Docker builds. For deployment,
 `gcloud run deploy --source` sends the source to Cloud Build; the built image is stored in Artifact Registry and
 deployed to Cloud Run. The model is baked into this self-contained serving image. Users reach either the embedded web
-frontend or FastAPI's `/predict` and `/attribute` endpoints.
+frontend or FastAPI's `/predict` and `/attribute` endpoints. Changes to DVC metadata additionally trigger the
+continuous-data workflow, which rebuilds and validates the dataset splits. A staged W&B artifact triggers the model
+registry workflow, which validates the model against the DVC test set and assigns the `production` alias only after
+all checks pass.
 
 Operational data flows in two directions. Each prediction increments Prometheus request, latency and predicted-label
 metrics, while Cloud Monitoring uses Cloud Run's managed request metrics for 5xx and p95-latency email alerts.
@@ -777,7 +811,7 @@ manual steps.
 
 Sofiia (13027681): My biggest struggle was optimizing time during inference. After deployment, our own alerting fired on 5xx errors: the logs showed slow cold starts because the container re-installed dependencies at startup, which I fixed by starting the venv binaries directly in the entrypoint. The `/attribute` endpoint was also challenging: exact Shapley computation scales exponentially with prompt length, taking more time during inference, so I switched to the KernelSHAPIQ approximator with a configurable budget and a longer Cloud Run timeout.
 
-Lennart (12166892): --- fill here ---
+Lennart (12166892): For me, the hardest parts were translating code that worked locally into a reliable cloud training infrastructure and getting the different MLOps services to work together. The training pipeline itself was usually not the problem, but running it inside containers on GCP introduced additional challenges around data access, artifact paths, permissions, service accounts and authentication. Many errors that initially looked like code problems were therefore caused by the surrounding cloud configuration. Since cloud feedback cycles were slow and sometimes expensive, I relied heavily on unit tests, local CPU runs and short smoke tests before starting full training jobs. W&B and Vertex AI logs then helped me identify and fix the remaining issues without repeatedly launching complete cloud training jobs.
 
 ### Question 31
 
@@ -797,7 +831,7 @@ Lennart (12166892): --- fill here ---
 
 Sofiia Nikolenko (13027681) set up the initial cookiecutter project structure and implemented the scientific core: the shapiq cooperative-game formulation and the attribution pipeline computing Shapley values and pairwise interactions. She developed the FastAPI application (`/predict`, `/attribute`) with its embedded web frontend, containerized it, and deployed it to Cloud Run in the serving GCP project. She also built the monitoring stack — prediction logging to GCS, the Evidently drift dashboard at `/monitoring`, Prometheus metrics, and the Cloud Monitoring alert policies — wrote the API unit tests, performed load testing with Locust, and published the MkDocs documentation site to GitHub Pages.
 
-Lennart Lamberts (12166892) built the data layer: downloading, normalizing, deduplicating and splitting the five prompt-safety datasets, and setting up DVC with the GCS remote in the data/training GCP project. He implemented the Lightning training pipeline with Hydra configuration, W&B logging and the hyperparameter sweep, performed the profiling optimization of data loading, created the CPU/GPU training Docker images and the CI workflows (linting, tests, Docker builds, and the continuous data-validation workflow), and ran cloud training on Compute Engine and the final Vertex AI DDP job.
+Lennart Lamberts (12166892) built the data layer: downloading, normalizing, deduplicating and splitting the five prompt-safety datasets, and setting up DVC with the GCS remote in the data/training GCP project. He implemented the Lightning training pipeline with Hydra configuration, W&B logging and the hyperparameter sweep, profiled the training pipeline and used the results to optimize batching and data loading, created the CPU/GPU training Docker images and the CI workflows (linting, tests, Docker builds, the continuous data-validation workflow, and model validation through the W&B Model Registry), and ran cloud training on Compute Engine and the final Vertex AI DDP job.
 
 We reviewed and used each other's parts to ensure both of us understand the full pipeline.
 
