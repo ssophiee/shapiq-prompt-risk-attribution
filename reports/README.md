@@ -69,15 +69,10 @@ will check the repositories and the code to verify your answers.
 * [x] Write one or multiple configurations files for your experiments (M11)
 * [x] Used Hydra to load the configurations and manage your hyperparameters (M11)
 * [x] Use profiling to optimize your code (M12)
-    * *Lightning Simple/PyTorch profiling found fixed 128-token padding in every DistilBERT batch while prompts averaged
-      53.91 tokens. Dynamic batch padding plus deterministic length-grouped sampling reduced the mean padded width to
-      56.67 tokens and cut a matched 100-batch CPU profile from 62.527 s to 31.360 s (-49.85%).*
 * [x] Use logging to log important events in your code (M14)
 * [x] Use Weights & Biases to log training progress and other important metrics/artifacts in your code (M14)
 * [x] Consider running a hyperparameter optimization sweep (M14)
-    * *W&B Bayesian sweep over the DistilBERT hyperparameters, maximising `val/roc_auc` (`configs/sweep.yaml`).*
 * [x] Use PyTorch-lightning (if applicable) to reduce the amount of boilerplate in your code (M15)
-    * *Training refactored into a `LightningModule` + `LightningDataModule` (`lightning_module.py`, `lightning_data_module.py`); `train.py` drives `lightning.Trainer`.*
 
 ### Week 2
 
@@ -89,54 +84,35 @@ will check the repositories and the code to verify your answers.
 * [x] Add a linting step to your continuous integration (M17)
 * [x] Add pre-commit hooks to your version control setup (M18)
 * [x] Add a continues workflow that triggers when data changes (M19)
-    * *`cml-data.yaml` follows the course CML pattern: DVC metadata changes trigger GCP authentication, raw-data pull,
-      preprocessing/splitting, data tests and a text-only integrity report uploaded as an artifact and posted to pull
-      requests through an updating CML comment.*
 * [x] Add a continues workflow that triggers when changes to the model registry is made (M19)
-    * *`stage-model.yaml` listens for W&B's `staged_model` repository dispatch (and supports manual testing), downloads
-      the exact staged artifact and the DVC test split, enforces model-file, probability, class-output, F1 and ROC-AUC
-      gates, uploads a text/JSON report, and assigns `production` only after every check passes.*
 * [x] Create a data storage in GCP Bucket for your data and link this with your data version control setup (M21)
-    * *DVC remote on GCS (`gs://prompt_classifier_mlops`) holding the datasets and trained model.*
 * [x] Create a trigger workflow for automatically building your docker images (M21)
-    * *GitHub Actions (`ci-api.yaml`, `ci-train.yaml`) build the API and training images on every push/PR to `main`.*
 * [x] Get your model training in GCP using either the Engine or Vertex AI (M21)
 * [x] Create a FastAPI application that can do inference using your model (M22)
 * [x] Deploy your model in GCP using either Functions or Run as the backend (M23)
 * [x] Write API tests for your application and setup continues integration for these (M24)
 * [x] Load test your application (M24)
-    * *Locust (`locustfile.py`, `invoke load-test`) simulating mixed traffic against the deployed Cloud Run service — weighted mostly `/predict`, plus `/health`, the frontend, and occasional low-budget `/attribute` calls. Result: 5533 requests, 99.8% success; `/predict` median 350 ms / p95 900 ms / p99 1.2 s, low-budget `/attribute` median 590 ms.*
 * [ ] Create a more specialized ML-deployment API using either ONNX or BentoML, or both (M25)
 * [x] Create a frontend for your API (M26)
-    * *Dependency-free single-page HTML/CSS/JS UI, embedded in `web.py` and served by the same FastAPI container at `/`.*
 
 ### Week 3
 
 * [x] Check how robust your model is towards data drifting (M27)
-    * *Evidently `DataDriftPreset` comparing the training-set baseline vs live predictions on `prompt_len` / `token_count` / `p_risky`, plus a health test that the mean `p_risky` stays in [0.2, 0.8] (a collapsed all-safe/all-risky model fails it even without input drift). Report: `invoke monitor-report`.*
 * [x] Setup collection of input-output data from your deployed application (M27)
-    * *Every `/predict` and `/attribute` call on Cloud Run mirrors its full row (raw prompt text + input stats + predicted probability) to the GCS bucket `mlops-shapiq-project-monitoring`; `invoke monitor-report-cloud` pulls those rows down and builds the drift report against live traffic.*
 * [x] Deploy to the cloud a drift detection API (M27)
-    * *`GET /monitoring` on the deployed Cloud Run service: fetches the training baseline + all logged prediction rows from the GCS bucket, runs Evidently, and serves the drift dashboard as HTML — drift detection integrated into the API itself, no local tooling needed.*
 * [x] Instrument your API with a couple of system metrics (M28)
-    * *Prometheus metrics at `GET /metrics`: `api_requests_total` (per endpoint + status code), `api_request_duration_seconds` latency histograms (per endpoint), and `api_predicted_labels_total` (risky vs safe — catches a collapsed model operationally).*
 * [x] Setup cloud monitoring of your instrumented application (M28)
-    * *Google Cloud Monitoring over Cloud Run's built-in `request_count` / `request_latencies` metrics for the deployed service.*
 * [x] Create one or more alert systems in GCP to alert you if your app is not behaving correctly (M28)
-    * *Two Cloud Monitoring alert policies → email (`deploy/alerts.sh`): any 5xx responses within a 5-minute window, and p95 latency above 30 s (deliberately high — `/attribute` legitimately takes tens of seconds).*
 * [x] If applicable, optimize the performance of your data loading using distributed data loading (M29)
 * [x] If applicable, optimize the performance of your training pipeline by using distributed training (M30)
-    * *DDP support via Lightning + Hydra hardware configs (`configs/hardware/{local,single_gpu,ddp}.yaml`) selecting accelerator/devices/strategy.*
 * [ ] Play around with quantization, compilation and pruning for you trained models to increase inference speed (M31)
 
 ### Extra
 
 * [x] Write some documentation for your application (M32)
-    * *MkDocs site (`docs/`), plus `API.md` (full API guide incl. a "what is used for what" stack table), `DOCKER.md`, and `deploy/README.md`.*
 * [x] Publish the documentation to GitHub Pages (M32)
 * [x] Revisit your initial project description. Did the project turn out as you wanted?
 * [x] Create an architectural diagram over your MLOps pipeline
-    * *Mermaid diagram in the root `README.md` (MLOps workflow section): training + DVC, CI/CD to Cloud Run, serving, metrics, GCS collection, drift and alerting.*
 * [x] Make sure all group members have an understanding about all parts of the project
 * [x] Uploaded all your code to GitHub
 
@@ -173,17 +149,13 @@ NaN
 >
 > Answer:
 
-We used three third-party packages not covered in the course. The most central is `shapiq`, which computes Shapley
-values and interaction indices. It is the scientific core of our project: we model chain-of-thought steps as players
-in a cooperative game by subclassing `shapiq.Game`. Its `ExactComputer` computes first-order Shapley values and
-pairwise k-SII interactions, showing how each reasoning step, alone and with others, contributes to the risk score.
+We used three third-party packages not covered in the course. The most central is [`shapiq`](https://github.com/mmschlk/shapiq), which computes Shapley
+values and interactions. It is the core of our project: we model the tokens of a prompt as players
+in a cooperative game by subclassing `shapiq.Game`. We computed first-order Shapley values and
+pairwise k-SII interactions, showing how each token, alone and with others, contributes to the risk score.
 
 We also used Hugging Face `transformers` to load and fine-tune DistilBERT through
-`AutoModelForSequenceClassification` and `AutoTokenizer`, together with `get_linear_schedule_with_warmup`. This
-provided a strong text classifier without implementing the architecture ourselves. Finally, Hugging Face `datasets`
-uses `load_dataset` in `data.py` to download AdvBench and HarmBench programmatically instead of manually. This made
-data acquisition reproducible for each team member and in CI. Together these packages let us focus on the MLOps
-pipeline rather than modeling and data-fetching plumbing.
+`AutoModelForSequenceClassification` and `AutoTokenizer`, together with `get_linear_schedule_with_warmup`.
 
 ## Coding environment
 
@@ -206,7 +178,7 @@ pipeline rather than modeling and data-fetching plumbing.
 We used `uv` to manage our dependencies. Runtime dependencies are declared in `pyproject.toml`, with development tools (pytest, ruff, mypy, pre-commit, mkdocs, ...) separated into a `dev` dependency group. The exact resolved versions are in the committed `uv.lock` file, and `.python-version` pins the interpreter to Python 3.13, so every machine resolves to an identical environment. PyTorch is selected through optional extras: containers and CI install with `--extra cpu` (CPU-only wheels, keeping images ~7 GB slimmer), while the GPU training image uses `--extra cu124`, with `[tool.uv.sources]` mapping each extra to the right PyTorch index. A new team member would run:
 
 ```bash
-git clone <repo-url> && cd shapiq-cot-attribution
+git clone git@github.com:ssophiee/shapiq-prompt-risk-attribution.git && cd shapiq-prompt-risk-attribution
 uv sync --frozen --extra cpu                 # Linux; use uv sync --frozen on macOS
 uv run dvc pull                              # fetch DVC-tracked data + trained model from GCS
 uv run pre-commit install --install-hooks    # enable the linting/formatting hooks
@@ -228,17 +200,15 @@ uv run pre-commit install --install-hooks    # enable the linting/formatting hoo
 >
 > Answer:
 
-We started from the DTU `mlops_template` cookiecutter and retained its main separation of source code, tests, data,
+We started from the DTU `mlops_template` cookiecutter and maintained its main separation of source code, tests, data,
 models, reports, configuration and documentation. We filled `src/shapiq_attribution/` with the dataset acquisition and
 normalization code, DistilBERT model utilities, Lightning training modules, SHAPIQ game and attribution logic, FastAPI
-application, frontend and monitoring. `tests/` contains the corresponding offline unit and API tests. `configs/` holds
-the Hydra training, sweep and hardware profiles, while `data/` and `models/` contain DVC-managed artifacts.
+application, frontend and monitoring. `tests/` contains the corresponding offline unit and API tests. `configs/` holds the Hydra training, sweep and hardware profiles, while `data/` and `models/` contain DVC-managed artifacts.
 
 We extended the template with `dockerfiles/` and Docker Compose for CPU/GPU training and serving, `deploy/` for Cloud
 Run and Cloud Monitoring scripts, `.github/workflows/` for CI, `experiments/` for attribution experiments, and a
-MkDocs site in `docs/`. We also added `dvc.yaml`/`dvc.lock`, an embedded web frontend, Locust load tests and separate
-local, single-GPU and DDP hardware configurations. `tasks.py` provides convenient Invoke wrappers around the most
-common workflows.
+MkDocs site in `docs/`. We also added `dvc.yaml`/`dvc.lock`, a web frontend, Locust load tests and separate
+local, single-GPU and DDP hardware configurations. `tasks.py` provides invoke wrappers for the main workflows.
 
 ### Question 6
 
@@ -253,9 +223,9 @@ common workflows.
 >
 > Answer:
 
-We used `ruff` for both linting and formatting, configured in `pyproject.toml` (120-char lines; pyflakes, pycodestyle, isort, bugbear and pyupgrade rule sets). It is enforced at two levels: pre-commit hooks run `ruff check --fix` and `ruff format` on every commit, and a CI workflow (`ci-lint.yaml`) re-runs `ruff check` and `ruff format --check` so nothing unformatted reaches `main`. For typing, our functions carry type hints (e.g. `run_shapiq(cot_steps: list[str], value_fn) -> tuple`). For documentation, key modules and functions have docstrings.
+We used `ruff` for both linting and formatting, configured in `pyproject.toml` (120-char lines; pyflakes, pycodestyle, isort, bugbear and pyupgrade rule sets). It is enforced at two levels: pre-commit hooks run `ruff check --fix` and `ruff format` on every commit, and a CI workflow (`ci-lint.yaml`) re-runs `ruff check` and `ruff format --check`. For typing, our functions carry type hints (e.g. `run_safety_shapiq(game: SafetyAnalysisGame, budget: int = 256) -> shapiq.InteractionValues`). For documentation, key modules and functions have docstrings.
 
-These concepts are important as a project and team grow. A shared format keeps the code readable and consistent independent of who wrote it, and allows for focusing on code logic rather than style. Type hints make it clear what a function expects and returns. Docstrings and documentation help team members understand parts of the code they did not write themselves, without having to ask the original author.
+These concepts are important as a project and team grow. A shared format keeps the code readable and consistent independent of who wrote it, and allows for focusing on code logic. Type hints make it clear what a function expects and returns. Docstrings and documentation help team members understand parts of the code they did not write themselves, without having to ask the original author.
 
 ## Version control
 
@@ -274,7 +244,7 @@ These concepts are important as a project and team grow. A shared format keeps t
 >
 > Answer:
 
-We implemented 100 tests across 13 test files. Primarily we are testing the data layer (dataset normalization for all five sources, JSONL round trips, split integrity, continuous-data statistics and the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy additive game), as these are the most critical parts of our application. We also test the model wrapper (single and batched prediction, saving/loading), evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, and the Lightning training setup including profiling, optimized batching and an end-to-end trainer run on a tiny dataset.
+We implemented 100 tests across 13 test files. This number of tests allows us to cover the whole pipeline without spending too much time on debugging once its in the cloud. Primarily we are testing the data layer (dataset normalization for all six sources, split integrity, continuous-data statistics and the CLI) and the shapiq attribution core (game layer, value function, and exact Shapley values verified on a toy game). We also test the model wrapper, evaluation metrics, plotting, the FastAPI endpoints, monitoring and drift-report building, and the Lightning training setup including profiling, and a run on a tiny dataset.
 
 ### Question 8
 
@@ -289,9 +259,9 @@ We implemented 100 tests across 13 test files. Primarily we are testing the data
 >
 > Answer:
 
-The total code coverage is 71%, measured over all our Python source code. The main logic is fully covered: the shapiq game layer, attribution value function, model utilities, evaluation metrics and plotting are at 100%, and data loading at 98%. The score is mainly lowered by `pipeline.py` (0%), `train.py` (49%) and `model_registry.py` (51%), whose remaining paths require complete training, command-line or external-service execution. Given the well-tested core, we trust the codebase for its intended use.
+The total code coverage is 71%, measured over all our source code. The main logic is fully covered: the shapiq game layer, attribution value function, model utilities, evaluation metrics and plotting are at 100%, and data loading at 98%. The score is mainly lowered by `pipeline.py` (0%), `train.py` (49%) and `model_registry.py` (51%), whose remaining paths require loading heavy external resources such as full LLM, GPUs or cloud services. Given the well-tested core, we trust the codebase for its intended use.
 
-Even with 100% coverage we would not consider the code error free: coverage only shows that a line ran during a test, not that the outcome was asserted correctly. For example, edge cases can pass full coverage, as do issues that only appear in production such as unexpected inputs or drifting data — which is why we also monitor the deployed model instead of relying on tests alone.
+Even with 100% coverage we would not consider the code error free: coverage only shows that a line ran during a test, not that the outcome was asserted correctly. For example, edge cases can pass full coverage, as do issues that only appear in production such as unexpected inputs or drifting data, which is why we also monitor the deployed model.
 
 ### Question 9
 
@@ -314,9 +284,8 @@ metadata or pipeline files changed. These workflows also support `pull_request` 
 them. The second branch, `gh-pages`, is not used for collaboration: `mkdocs gh-deploy` publishes the documentation
 there for GitHub Pages.
 
-In a larger team, branches would separate work in progress and help keep `main` deployable. Pull requests would add
-quality checks before merging: CI could pass before code reaches `main`, another team member could review the change,
-and the PR would document why it was made. This would reduce the risk of untested or unreviewed code reaching the
+In a larger team, branches would separate work in progress, so that each feature a member works on is isolated, and help keep `main` deployable. Pull requests would add
+quality checks before merging, another team member could review the change,and the PR would document why it was made. This would reduce the risk of untested or unreviewed code reaching the
 branch from which images are built.
 
 ### Question 10
@@ -335,13 +304,14 @@ branch from which images are built.
 Yes. DVC versions the artifacts that are too large or too changeable for Git. The configured remote `storage` points
 to `gs://prompt_classifier_mlops`. `data/raw.dvc` tracks the seven downloaded raw snapshots, while `dvc.yaml` defines
 reproducible stages for normalization, stratified splitting and distributed training. `dvc.lock` records hashes for
-the source data, configuration, code dependencies, processed train/validation/test splits, the approximately 256 MB
+the source data, configuration, code dependencies, processed train/validation/test splits, the
 DistilBERT model and `reports/metrics.json`.
 
-This improved the project because a Git commit identifies both code and the exact data/model state without checking
-large binaries into Git. A team member can run `uv run dvc pull` to restore the artifacts or `uv run dvc repro` to
-recompute only stages whose dependencies changed. After the successful Vertex AI DDP run, the new model, metrics and
-lock metadata were pushed to GCS. Consequently, experiments, deployment and monitoring can use the same versioned
+This improved the project because it makes runs reproducible: every team member pulls the same raw snapshots and
+splits from DVC instead of relying on local copies, and we avoid pushing heavy files to GitHub. A team member can run
+`uv run dvc pull` to restore the artifacts or `uv run dvc repro` to
+recompute only stages whose dependencies changed. After a successful Vertex AI training run, the new model, metrics and
+lock metadata are pushed to GCS. Consequently, experiments, deployment and monitoring can use the same versioned
 classifier and dataset instead of relying on manually copied local files.
 
 ### Question 11
@@ -360,16 +330,15 @@ classifier and dataset instead of relying on manually copied local files.
 > Answer:
 
 Our continuous integration is organized in six GitHub Actions workflows. The three core CI workflows run on every
-push and pull request to `main`. `ci-lint.yaml` checks the code with `ruff check` and `ruff format --check`.
+push request to `main`. `ci-lint.yaml` checks the code with `ruff check` and `ruff format --check`.
 `ci-train.yaml` runs the offline tests for data processing, splitting, model construction and Lightning training,
 then builds the CPU training image. `ci-api.yaml` runs the API, monitoring and attribution tests with coverage and
-builds the serving image. Each job uses an Ubuntu runner, Python 3.13 and `uv sync --frozen --extra cpu`, so CI uses
-the committed dependency lock file.
+builds the image.
 
 The remaining workflows cover ML-specific automation. `cml-data.yaml` runs only when DVC metadata or pipeline files
 change. It authenticates with GCP, pulls the raw snapshots, reproduces the processed splits, runs the data tests and
-uploads a statistics report; on pull requests, CML also posts the report as a comment. `stage-model.yaml` is triggered
-by a staged W&B model or manually. It pulls the DVC-versioned test set, validates the model artifact and promotes it
+uploads a statistics report. `stage-model.yaml` is triggered automatically when W&B stages a model (via repository
+dispatch) or manually: it pulls the DVC-versioned test set, validates the model artifact and promotes it
 to the `production` alias only if all checks pass. Finally, `monitoring.yaml` creates the Evidently drift report on a
 weekly schedule or manual trigger.
 
@@ -426,14 +395,12 @@ uv run python -m shapiq_attribution.train hardware=single_gpu training.learning_
 Reproducibility is handled at several layers. `uv.lock` and Python 3.13 fix the software environment. DVC records
 content hashes for raw data, processed splits, code/config dependencies, the trained model and metrics; `dvc pull`
 restores an existing state and `dvc repro` rebuilds it. Hydra keeps every training option in version control and W&B
-receives the fully resolved configuration plus the effective global batch size. We set seed 12 for Python, Lightning
-and dataloader workers and use a seeded stratified train/validation/test split.
+receives the fully resolved configuration. We set seed 12 for Python, Lightning and dataloader workers and use a seeded stratified train/validation/test split.
 
 Lightning saves the best checkpoint according to validation ROC-AUC, then evaluates that checkpoint on validation and
 test data. W&B logs losses, metrics, learning rate and hyperparameters, while `reports/metrics.json` and the exported
-model are DVC outputs. To reproduce a run, check out its Git commit, run `uv sync --frozen`, `uv run dvc pull`, and
-start training with the recorded Hydra overrides. GPU mixed precision and DDP may still prevent bit-for-bit identical
-floating-point results, but all inputs and decisions are traceable.
+model are DVC outputs. To reproduce a run, run `uv sync --frozen`, `uv run dvc pull`, and
+start training with the Hydra overrides. GPU mixed precision and DDP may still prevent bit-for-bit identical results, but all inputs and decisions are traceable.
 
 ### Question 14
 
@@ -470,8 +437,7 @@ test accuracy 0.8456 and F1 0.8121.
 The third screenshot shows our Bayesian sweep over learning rate, batch size, weight decay, maximum token length and
 training epochs, maximizing validation ROC-AUC. Two trials verified that the automated setup worked and W&B recorded
 and compared the configurations. They were insufficient for reliable conclusions about parameter importance, so the
-sweep remained exploratory rather than exhaustive. We trained the final model separately on Vertex AI with a stable
-configuration.
+sweep remained exploratory. We trained the final model separately on Vertex AI.
 
 ![Two completed trials in the W&B Bayesian sweep](figures/wandb_sweep.png)
 
@@ -515,11 +481,10 @@ GitHub Actions rebuilds the training and API images on every push to `main`, and
 When debugging, we started with the smallest setup that reproduced the problem. Deterministic unit tests checked data
 loading, model construction, training and serving separately. Before complete training runs, we used short
 few-batch smoke tests. For dataloaders, we inspected individual batches before adding workers or distributed training.
-For cloud problems, tracebacks, W&B logs and GCP logs helped us debug DVC access, credentials, CUDA/DDP settings and
-the container entrypoint through failed and cancelled Vertex AI smoke jobs before the successful DDP run.
+For cloud problems, we used W&B logs and GCP logs to debug the code.
 
 We did not assume the code was optimal. Lightning's SimpleProfiler measured training actions, while PyTorchProfiler
-recorded operator shapes, CPU time and memory. The profiles showed that forward and backward passes dominated runtime
+recorded CPU time and memory. The profiles showed that forward and backward passes dominated runtime
 and fixed padding expanded every batch to 128 tokens although prompts averaged 53.91 tokens. We introduced dynamic
 batch padding and deterministic length-grouped sampling. In a matched 100-batch CPU profile, mean padded width fell to
 56.67 tokens and fit time decreased from 62.527 to 31.360 seconds, an improvement of 49.85%.
@@ -570,8 +535,7 @@ We first used Compute Engine to train the classifier with a conventional single-
 `shapiq-train-gpu` instance in `us-west4-a` was an `n1-standard-4` VM with 4 vCPUs, 15 GB RAM, one NVIDIA Tesla T4 and
 a 200 GB persistent disk. We ran our custom GPU training container on the VM rather than installing the complete
 environment manually. The container pulled the versioned training data from the DVC Cloud Storage remote and executed
-the same PyTorch code that we had developed locally. At this stage, the training pipeline did not yet use Lightning,
-DDP or 16-bit mixed precision.
+the same PyTorch code that we had developed locally. At this stage, the training pipeline did not yet use Lightning and DDP.
 
 We later refactored the training code into a LightningModule and LightningDataModule so that distributed execution
 could be configured without implementing the DDP process management ourselves. For the final training, we therefore
@@ -598,9 +562,9 @@ which used both GPUs with DDP and 16-bit mixed precision.
 >
 > Answer:
 
-![Our artifact registry](figures/artifact_registry1.png)
-
 ![Training image inside the registry](figures/artifact_registry2.png)
+
+![Our artifact registry](figures/artifact_registry_api.png)
 
 ### Question 21
 
@@ -655,7 +619,7 @@ the final two-GPU DDP training easier to reproduce and manage than configuring a
 >
 > Answer:
 
-Yes, we wrote a FastAPI application (`src/shapiq_attribution/api.py`). The DistilBERT classifier is loaded once at startup via the lifespan hook and provided to endpoints through FastAPI's dependency injection, which also lets tests swap in a stub predictor. Pydantic models validate all requests and responses. The API exposes `POST /predict` (risk probability + label for a prompt) and — the special part — `POST /attribute`, which explains a prediction by treating each word as a player in a cooperative game and computing Shapley values and pairwise interactions with KernelSHAPIQ, with a configurable computation budget. Beyond inference we added: a dependency-free HTML/JS frontend served at `/` from the same container, `GET /health` for probes, `GET /metrics` with Prometheus counters and per-endpoint latency histograms (collected by an HTTP middleware), and `GET /monitoring`, which renders an Evidently data-drift report. Finally, every prediction is mirrored (prompt, input statistics, predicted probability) to a GCS bucket via FastAPI background tasks, so logging never delays the response to the user.
+Yes, we wrote a FastAPI application (`src/shapiq_attribution/api.py`). The DistilBERT classifier is loaded once at startup and provided to endpoints through FastAPI's dependency injection, which also lets tests swap in a stub predictor. Pydantic models validate all requests and responses. The API exposes `POST /predict` (risk probability + label for a prompt) and `POST /attribute`, which explains a prediction by treating each token as a player in a cooperative game and computing Shapley values and pairwise interactions with KernelSHAPIQ, with a configurable computation budget. Beyond inference we added: a frontend served at `/` from the same container, `GET /health` for probes, `GET /metrics` with Prometheus counters and per-endpoint latency histograms, and `GET /monitoring`, which renders an Evidently data-drift report. Finally, every prediction is mirrored (prompt, input statistics, predicted probability) to a GCS bucket via FastAPI background tasks.
 
 ### Question 24
 
@@ -696,7 +660,7 @@ The same pattern with a `budget` field calls `/attribute` for explanations, and 
 
 Yes, both. For functional testing we use pytest with FastAPI's `TestClient` (`tests/test_api.py`, 10 tests): the model-loading dependency is replaced with a deterministic stub predictor, so response schemas, risky/safe thresholding, validation errors, the `/metrics` counters and the `/monitoring` report are verified quickly and offline. These tests also run in CI on every push.
 
-For load testing we ran Locust (`locustfile.py`, `invoke load-test`) against the deployed Cloud Run service with a realistic endpoint mix: mostly `/predict`, some `/health` and frontend loads, occasional low-budget `/attribute` calls. With 10 concurrent users at ~6 req/s the service answered 5533 requests with 99.8% success; `/predict` had a median of 350 ms and p95 of 900 ms, `/attribute` a median of 590 ms. The Cloud Run logs traced the few `/predict` 500s (which triggered our 5xx email alert, see below) to `RuntimeError: Already borrowed` — a thread-safety limitation of the shared HuggingFace fast tokenizer under concurrent requests; the remaining failures were network blips on the load-generating machine. Overall the 2 vCPU / 2 GiB configuration handled the load comfortably.
+For load testing we ran Locust (`locustfile.py`, `invoke load-test`) against the deployed Cloud Run service with a realistic endpoint mix: mostly `/predict`, some `/health` and frontend loads, occasional low-budget `/attribute` calls. With 10 concurrent users at ~6 req/s the service answered 5533 requests with 99.8% success; `/predict` had a median of 350 ms and p95 of 900 ms, `/attribute` a median of 590 ms. The Cloud Run logs traced the few `/predict` 500s (which triggered our 5xx email alert, see below) to `RuntimeError: Already borrowed` — a thread-safety limitation of the shared HuggingFace fast tokenizer under concurrent requests; the remaining failures were network temporary issues on the load-generating machine. Overall the 2 vCPU / 2 GiB configuration handled the load well.
 
 ![Locust statistics for the load test](figures/locust_load_test.png)
 
@@ -717,7 +681,7 @@ For load testing we ran Locust (`locustfile.py`, `invoke load-test`) against the
 >
 > Answer:
 
-Yes, monitoring works in three layers. First, data collection: every `/predict` and `/attribute` call mirrors its prompt, input statistics (`prompt_len`, `token_count`) and predicted probability to a GCS bucket via background tasks. Second, drift detection: `GET /monitoring` on the deployed service fetches the training-set baseline plus all logged prediction rows and renders an Evidently report — data-drift tests on prompt length, token count and `p_risky`, plus a health test that the mean predicted risk stays in [0.2, 0.8], catching a model that collapses to one class even without input drift. Third, system monitoring: the API exposes Prometheus metrics (per-endpoint request counts, latency histograms, a risky-vs-safe counter), and Google Cloud Monitoring watches Cloud Run's request metrics with two email alert policies: any 5xx responses within 5 minutes, and p95 latency above 30 s. This monitoring proved itself: a real 5xx alert fired, the request logs pointed to slow cold starts (the container re-installed dev dependencies at startup), and we fixed the Docker entrypoint as a result.
+Yes, monitoring works in three ways. First, data collection: every `/predict` and `/attribute` call mirrors its prompt, input statistics (`prompt_len`, `token_count`) and predicted probability to a GCS bucket via background tasks. Second, drift detection: `GET /monitoring` on the deployed service fetches the training-set baseline plus all logged prediction rows and renders an Evidently report — data-drift tests on prompt length, token count and `p_risky`, plus a health test that the mean predicted risk stays in [0.2, 0.8], catching a model that collapses to one class even without input drift. Third, system monitoring: the API exposes Prometheus metrics (per-endpoint request counts, latency histograms, a risky-vs-safe counter), and Google Cloud Monitoring watches Cloud Run's request metrics with two email alert policies: any 5xx responses within 5 minutes, and p95 latency above 30 s. This monitoring proved itself: a real 5xx alert fired, the request logs pointed to slow cold starts (the container re-installed dev dependencies at startup), and we fixed the Docker entrypoint as a result.
 
 Below: Cloud Run request rate (blue) and p50 latency (green) during the Locust load test — throughput rises to
 ~0.7 req/s while latency stays flat.
@@ -768,7 +732,7 @@ IAM permissions, quotas and cost control required more attention than local deve
 >
 > Answer:
 
-Yes. We implemented a frontend for our API: a dependency-free single-page HTML/CSS/JS app embedded in `web.py` and served at `/` by the same FastAPI container. We did this so the classifier and especially the SHAPIQ explanations are usable by non-technical users — the page shows the risk score and colors each word of the prompt by its Shapley value. Secondly, we split our infrastructure across two GCP projects (data/training vs. serving/monitoring, mirroring our team split), connected by a least-privilege bucket-level IAM grant. Finally, we published an [MkDocs (Material) documentation site](https://ssophiee.github.io/shapiq-prompt-risk-attribution/) to GitHub Pages, with getting-started, API, training, monitoring guides and a code reference.
+Yes. We implemented a frontend for our API: a single-page app embedded in `web.py` and served at `/` by the same FastAPI container. We did this so the classifier and especially the SHAPIQ explanations are usable by non-technical users — the page shows the risk score and colors each word of the prompt by its Shapley value. Secondly, we split our infrastructure across two GCP projects (data/training vs. serving/monitoring, mirroring our team split), connected by a least-privilege bucket-level IAM grant. Finally, we published an [MkDocs (Material) documentation site](https://ssophiee.github.io/shapiq-prompt-risk-attribution/) to GitHub Pages, with getting-started, API, training, monitoring guides and a code reference.
 
 ![Our web frontend: risk score plus per-word Shapley attribution for a prompt](figures/interface.png)
 
@@ -789,7 +753,7 @@ Yes. We implemented a frontend for our API: a dependency-free single-page HTML/C
 
 ![Overall architecture of our system](figures/architecture.png)
 
-The workflow starts with five public prompt-safety datasets. Our data module downloads and normalizes them into a
+The workflow starts with six public prompt-safety datasets. Our data module downloads and normalizes them into a
 common JSONL schema, and DVC defines the preparation and stratified splitting stages. Git stores the code, Hydra
 configuration and DVC metadata; the larger raw/processed files, trained DistilBERT model and metrics are stored in the
 `prompt_classifier_mlops` Cloud Storage bucket. This makes a Git revision and `dvc.lock` sufficient to recover the
@@ -809,12 +773,10 @@ continuous-data workflow, which rebuilds and validates the dataset splits. A sta
 registry workflow, which validates the model against the DVC test set and assigns the `production` alias only after
 all checks pass.
 
-Operational data flows in two directions. Each prediction increments Prometheus request, latency and predicted-label
+Each prediction updates Prometheus request, latency and predicted-label
 metrics, while Cloud Monitoring uses Cloud Run's managed request metrics for 5xx and p95-latency email alerts.
 Prediction features and probabilities are also written to a separate monitoring bucket. Evidently compares those
-rows with the training baseline and renders the `/monitoring` drift and model-health dashboard. Thus code quality,
-artifact provenance, deployment, observability and drift detection form one traceable pipeline rather than separate
-manual steps.
+rows with the training baseline and renders the `/monitoring` drift.
 
 ### Question 30
 
@@ -848,7 +810,7 @@ Lennart (12166892): For me, the hardest parts were translating code that worked 
 > *We have used ChatGPT to help debug our code. Additionally, we used GitHub Copilot to help write some of our code.*
 > Answer:
 
-Sofiia Nikolenko (13027681) set up the initial cookiecutter project structure and implemented the scientific core: the shapiq cooperative-game formulation and the attribution pipeline computing Shapley values and pairwise interactions. She developed the FastAPI application (`/predict`, `/attribute`) with its embedded web frontend, containerized it, and deployed it to Cloud Run in the serving GCP project. She also built the monitoring stack — prediction logging to GCS, the Evidently drift dashboard at `/monitoring`, Prometheus metrics, and the Cloud Monitoring alert policies — wrote the API unit tests, performed load testing with Locust, and published the MkDocs documentation site to GitHub Pages.
+Sofiia Nikolenko (13027681) set up the initial cookiecutter project structure and implemented the shapiq attribution pipeline: the shapiq cooperative-game formulation and the attribution pipeline computing Shapley values and pairwise interactions. She developed the FastAPI application (`/predict`, `/attribute`) with its embedded web frontend, containerized it, and deployed it to Cloud Run in the serving GCP project. She also built the monitoring stack — prediction logging to GCS, the Evidently drift dashboard at `/monitoring`, Prometheus metrics, and the Cloud Monitoring alert policies — wrote the API unit tests, performed load testing with Locust, and published the MkDocs documentation site to GitHub Pages.
 
 Lennart Lamberts (12166892) built the data layer: downloading, normalizing, deduplicating and splitting the five prompt-safety datasets, and setting up DVC with the GCS remote in the data/training GCP project. He implemented the Lightning training pipeline with Hydra configuration, W&B logging and the hyperparameter sweep, profiled the training pipeline and used the results to optimize batching and data loading, created the CPU/GPU training Docker images and the CI workflows (linting, tests, Docker builds, the continuous data-validation workflow, and model validation through the W&B Model Registry), and ran cloud training on Compute Engine and the final Vertex AI DDP job.
 
