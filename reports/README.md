@@ -787,7 +787,7 @@ Yes. We implemented a frontend for our API: a dependency-free single-page HTML/C
 >
 > Answer:
 
-<!-- Add the architecture figure here. -->
+![Overall architecture of our system](figures/architecture.png)
 
 The workflow starts with five public prompt-safety datasets. Our data module downloads and normalizes them into a
 common JSONL schema, and DVC defines the preparation and stratified splitting stages. Git stores the code, Hydra

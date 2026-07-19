@@ -23,6 +23,7 @@ plugins:
             show_root_heading: true
             separate_signature: true
             show_signature_annotations: true
+            filters: ["!^_"]
 
 nav:
   - Home: index.md

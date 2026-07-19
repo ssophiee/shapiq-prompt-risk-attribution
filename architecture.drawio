@@ -1,0 +1,175 @@
+<mxfile host="app.diagrams.net" modified="2026-07-19T14:00:00.000Z" agent="claude" version="24.0.0">
+  <diagram name="MLOps architecture" id="mlops-arch">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1660" pageHeight="1120" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== Training pipeline ===== -->
+        <mxCell id="gTrain" value="Training pipeline" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#e6f4ea;strokeColor=#34a853;container=1;collapsible=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="780" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="data" value="Safety benchmarks&#10;AdvBench · HarmBench · WildGuard&#10;ToxicChat · BeaverTails" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#34a853;" vertex="1" parent="gTrain">
+          <mxGeometry x="20" y="50" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="dvc" value="DVC on GCS&#10;(data + model)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#ffffff;strokeColor=#34a853;" vertex="1" parent="gTrain">
+          <mxGeometry x="270" y="50" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="train" value="DistilBERT training&#10;PyTorch Lightning + Hydra" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#34a853;" vertex="1" parent="gTrain">
+          <mxGeometry x="470" y="55" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="wb" value="Weights &amp; Biases&#10;tracking + sweeps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#34a853;" vertex="1" parent="gTrain">
+          <mxGeometry x="290" y="190" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ckpt" value="Best model&#10;checkpoint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#34a853;" vertex="1" parent="gTrain">
+          <mxGeometry x="500" y="190" width="120" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="base" value="baseline.csv&#10;drift snapshot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#34a853;" vertex="1" parent="gTrain">
+          <mxGeometry x="645" y="190" width="120" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Model registry (W&B) ===== -->
+        <mxCell id="gReg" value="Model registry (W&amp;B) — continuous promotion" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#fff3e0;strokeColor=#fb8c00;container=1;collapsible=0;" vertex="1" parent="1">
+          <mxGeometry x="860" y="40" width="760" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="wbreg" value="W&amp;B Model Registry&#10;new model version&#10;staged" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#fb8c00;" vertex="1" parent="gReg">
+          <mxGeometry x="20" y="100" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="gates" value="stage-model.yaml&#10;quality gates&#10;outputs · F1 · ROC-AUC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#fb8c00;" vertex="1" parent="gReg">
+          <mxGeometry x="320" y="100" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="prod" value="tagged as&#10;production model" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#fb8c00;fontStyle=1;" vertex="1" parent="gReg">
+          <mxGeometry x="640" y="100" width="100" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Continuous data validation ===== -->
+        <mxCell id="gData" value="Continuous data validation" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#e0f2f1;strokeColor=#00897b;container=1;collapsible=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="780" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="dchange" value="DVC metadata&#10;change (push / PR)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#00897b;" vertex="1" parent="gData">
+          <mxGeometry x="20" y="60" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cml" value="cml-data.yaml&#10;pull data · preprocess · data tests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#00897b;" vertex="1" parent="gData">
+          <mxGeometry x="260" y="60" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comment" value="CML integrity report&#10;as updating PR comment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#00897b;" vertex="1" parent="gData">
+          <mxGeometry x="550" y="60" width="210" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Development & CI/CD ===== -->
+        <mxCell id="gDev" value="Development &amp; CI/CD" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#e8f0fe;strokeColor=#4285f4;container=1;collapsible=0;" vertex="1" parent="1">
+          <mxGeometry x="860" y="400" width="760" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="repo" value="GitHub&#10;repository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#4285f4;" vertex="1" parent="gDev">
+          <mxGeometry x="15" y="60" width="125" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ga" value="GitHub Actions&#10;lint · tests · builds" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#4285f4;" vertex="1" parent="gDev">
+          <mxGeometry x="160" y="60" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cb" value="Cloud Build&#10;Docker image" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#4285f4;" vertex="1" parent="gDev">
+          <mxGeometry x="330" y="60" width="130" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ar" value="Artifact&#10;Registry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#4285f4;" vertex="1" parent="gDev">
+          <mxGeometry x="480" y="60" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cr" value="Cloud Run&#10;deploy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#4285f4;" vertex="1" parent="gDev">
+          <mxGeometry x="620" y="60" width="120" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Serving ===== -->
+        <mxCell id="gServe" value="Deployment / Serving" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#fef7e0;strokeColor=#f9ab00;container=1;collapsible=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="780" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="user" value="User" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#f9ab00;" vertex="1" parent="gServe">
+          <mxGeometry x="30" y="65" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ui" value="Web UI&#10;embedded frontend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#f9ab00;" vertex="1" parent="gServe">
+          <mxGeometry x="160" y="60" width="170" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="api" value="FastAPI backend&#10;/predict · /attribute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#f9ab00;" vertex="1" parent="gServe">
+          <mxGeometry x="380" y="60" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rows" value="Prediction logs&#10;GCS bucket" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#ffffff;strokeColor=#f9ab00;" vertex="1" parent="gServe">
+          <mxGeometry x="610" y="50" width="150" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Monitoring & alerting ===== -->
+        <mxCell id="gMon" value="Monitoring &amp; alerting" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#f3e8fd;strokeColor=#a142f4;container=1;collapsible=0;" vertex="1" parent="1">
+          <mxGeometry x="860" y="640" width="760" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="prom" value="Prometheus&#10;/metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a142f4;" vertex="1" parent="gMon">
+          <mxGeometry x="30" y="60" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cmon" value="Google Cloud&#10;Monitoring" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a142f4;" vertex="1" parent="gMon">
+          <mxGeometry x="270" y="60" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="alert" value="Email alerts&#10;5xx · p95 latency" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#a142f4;" vertex="1" parent="gMon">
+          <mxGeometry x="520" y="60" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Drift detection ===== -->
+        <mxCell id="gDrift" value="Drift detection" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#fce8e6;strokeColor=#ea4335;container=1;collapsible=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="880" width="780" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ev" value="Evidently&#10;drift + model-health tests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ea4335;" vertex="1" parent="gDrift">
+          <mxGeometry x="110" y="55" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rep" value="Drift report&#10;served at /monitoring" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ea4335;" vertex="1" parent="gDrift">
+          <mxGeometry x="440" y="55" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== In-group edges (straight, non-overlapping) ===== -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="data" target="dvc"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="dvc" target="train"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="train" target="wb">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="555" y="205" /><mxPoint x="415" y="205" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="train" target="ckpt"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="train" target="base">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="645" y="205" /><mxPoint x="745" y="205" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e6" value="repository&#10;dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;verticalAlign=bottom;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="wbreg" target="gates">
+          <mxGeometry relative="1" as="geometry"><mxPoint as="offset" x="0" y="-14" /></mxGeometry>
+        </mxCell>
+        <mxCell id="e8" value="all pass" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;verticalAlign=bottom;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="gates" target="prod">
+          <mxGeometry relative="1" as="geometry"><mxPoint as="offset" x="0" y="-14" /></mxGeometry>
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="dchange" target="cml"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cml" target="comment"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="repo" target="ga"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="ga" target="cb"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cb" target="ar"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="ar" target="cr"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="user" target="ui"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="ui" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="api" target="rows"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="prom" target="cmon"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cmon" target="alert"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e20" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="ev" target="rep"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ===== Cross-group edges, each in its own corridor ===== -->
+        <mxCell id="x1" value="stage best model" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;fontSize=11;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="wb" target="wbreg">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="415" y="360" /><mxPoint x="845" y="360" /><mxPoint x="845" y="190" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="x2" value="used in the image" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;fontSize=11;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="ckpt" target="cb">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="560" y="380" /><mxPoint x="1255" y="380" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="x3" value="on data change" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;fontSize=11;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="dvc" target="dchange">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="385" y="205" /><mxPoint x="150" y="205" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="x4" value="serves" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="cr" target="api">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1540" y="610" /><mxPoint x="510" y="610" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="x5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="api" target="prom">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="510" y="850" /><mxPoint x="980" y="850" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="x6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="rows" target="ev">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="725" y="865" /><mxPoint x="260" y="865" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="x7" value="baseline" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;fontSize=11;exitX=1;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="base" target="ev">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="830" y="265" /><mxPoint x="830" y="1035" /><mxPoint x="260" y="1035" /></Array></mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

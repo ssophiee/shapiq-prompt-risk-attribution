@@ -43,54 +43,7 @@ that drive risky and safe predictions.
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    subgraph DEV["Development & CI/CD"]
-        direction LR
-        REPO[GitHub<br/>repository] --> GA[GitHub Actions<br/>lint · tests · image builds]
-        GA --> CB[Cloud Build<br/>Docker image]
-        CB --> AR[Artifact<br/>Registry]
-        AR --> CR[Cloud Run<br/>deploy]
-    end
-
-    subgraph TRAINING["Training pipeline"]
-        direction LR
-        DATA[Safety benchmarks<br/>AdvBench · HarmBench · WildGuard<br/>ToxicChat · BeaverTails] --> DVC[(DVC on GCS<br/>data + model)]
-        DVC --> TRAIN[DistilBERT training<br/>PyTorch Lightning + Hydra]
-        TRAIN --> WB[Weights & Biases<br/>tracking + sweep]
-        TRAIN --> CKPT[Best model<br/>checkpoint]
-        TRAIN --> BASE[baseline.csv<br/>drift snapshot]
-    end
-
-    subgraph SERVING["Deployment"]
-        direction LR
-        USER((User)) --> UI[Web UI<br/>embedded frontend]
-        UI --> API[FastAPI backend<br/>/predict · /attribute]
-        API --> ROWS[(Prediction logs<br/>GCS bucket)]
-    end
-
-    subgraph MONITORING["Monitoring & alerting"]
-        direction LR
-        PROM[Prometheus<br/>/metrics] --> CM[Google Cloud<br/>Monitoring] --> ALERT[Email alerts<br/>5xx · p95 latency]
-    end
-
-    subgraph DRIFT["Drift detection"]
-        direction LR
-        EV[Evidently<br/>drift + health tests] --> REPORT[Drift report<br/>served at /monitoring]
-    end
-
-    CKPT -->|baked into image| CB
-    CR --> API
-    API --> PROM
-    ROWS --> EV
-    BASE --> EV
-
-    style DEV fill:#e8f0fe,stroke:#4285f4,stroke-width:2px
-    style TRAINING fill:#e6f4ea,stroke:#34a853,stroke-width:2px
-    style SERVING fill:#fef7e0,stroke:#f9ab00,stroke-width:2px
-    style MONITORING fill:#f3e8fd,stroke:#a142f4,stroke-width:2px
-    style DRIFT fill:#fce8e6,stroke:#ea4335,stroke-width:2px
-```
+![Architecture overview](reports/figures/architecture.png)
 
 ## Quickstart
 
