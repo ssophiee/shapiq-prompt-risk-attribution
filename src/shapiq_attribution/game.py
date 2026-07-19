@@ -25,7 +25,6 @@ def run_shapiq(cot_steps: list[str], value_fn) -> tuple:
     """
     n = len(cot_steps)
     baseline = value_fn(np.zeros((1, n), dtype=bool))[0]
-    print(f"Empty coalition baseline: {baseline:.4f}")
     game = CoTGame(n_players=n, value_fn=value_fn)
     game.normalization_value = baseline
     computer = shapiq.ExactComputer(n_players=n, game=game)

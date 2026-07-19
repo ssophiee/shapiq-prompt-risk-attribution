@@ -498,6 +498,7 @@ docker run --rm -p 8000:8000 -v "$PWD/models:/app/models:ro" shapiq-api:latest
 ```
 
 GitHub Actions rebuilds the training and API images on every push to `main`, and the API image is what we deploy to Cloud Run. Link to docker files: [dockerfiles/](https://github.com/ssophiee/shapiq-prompt-risk-attribution/tree/main/dockerfiles)
+
 ### Question 16
 
 > **When running into bugs while trying to run your experiments, how did you perform debugging? Additionally, did you**
@@ -585,8 +586,6 @@ which used both GPUs with DDP and 16-bit mixed precision.
 > **You can take inspiration from [this figure](figures/bucket.png).**
 >
 > Answer:
-
-<!-- Add 1-2 screenshots of the GCP buckets here. -->
 
 ![Our buckets on GCP](figures/gcp_bucket1.png)
 

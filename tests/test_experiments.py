@@ -1,8 +1,4 @@
-"""Tests for experiments/run_attribution.py.
-
-TODO: Add more tests for attribute_prompt, e.g. with a real predictor and
-checking that top_3_tokens are actually in the prompt.
-"""
+"""Tests for experiments/run_attribution.py."""
 
 from __future__ import annotations
 
