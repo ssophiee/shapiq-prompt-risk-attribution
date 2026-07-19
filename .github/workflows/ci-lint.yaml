@@ -27,7 +27,7 @@ jobs:
         run: uv sync --frozen --extra cpu
 
       - name: Ruff lint
-        run: uv run ruff check .
+        run: uv run --no-sync ruff check .
 
       - name: Ruff format check
-        run: uv run ruff format --check .
+        run: uv run --no-sync ruff format --check .
