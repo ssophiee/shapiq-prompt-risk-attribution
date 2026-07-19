@@ -413,24 +413,34 @@ floating-point results, but all inputs and decisions are traceable.
 >
 > Answer:
 
-<!-- Add 1-3 W&B screenshots here. -->
+We used Weights & Biases together with Lightning to keep track of our experiments. For every run, W&B stores the
+complete Hydra configuration, including the model and optimizer settings, hardware profile, batch size and random
+seed. The first screenshot shows the overall workspace with 16 recorded runs from different stages of development:
+early local experiments, smoke tests, GPU runs, the final Vertex AI DDP training and the later model-publication runs.
+The charts make it easy to compare the learning-rate schedule, number of epochs and final test metrics. This helped us
+check whether improvements also carried over from small development runs to the complete cloud training.
 
-We integrated Weights & Biases through Lightning's `WandbLogger`. Each run receives the resolved Hydra configuration,
-including data paths, seed, model name, maximum sequence length, optimizer settings, hardware profile and effective
-global batch size. During training we track step- and epoch-level training loss and the AdamW learning rate. On
-validation and test data we log loss, accuracy, precision, recall, F1 and ROC-AUC.
+![W&B overview comparing tracked runs, learning rate and test metrics](figures/wandb_all_runs1.png)
 
-ROC-AUC is the primary model-selection metric because it measures how well risky prompts rank above safe prompts
-across all classification thresholds. This is more useful than accuracy alone when class frequencies or the eventual
-risk threshold change. Loss shows whether optimization is converging and can expose overfitting when training loss
-continues falling while validation loss rises. Precision measures how often a risk warning is justified, whereas
-recall measures how many risky prompts are caught; F1 summarizes that trade-off. Accuracy remains an intuitive overall
-check, and the test metrics are only used for final evaluation. The final DVC-recorded model achieved validation
-ROC-AUC 0.9283 and test ROC-AUC 0.9314, with test accuracy 0.8456 and F1 0.8121.
+The second screenshot focuses on the training process itself. The step-level loss of the final Vertex DDP run is
+naturally noisy because every point comes from a different mini-batch, but the overall downward trend is clear. The
+smoother epoch-level loss confirms that the model converged during training. We mainly used validation ROC-AUC for
+model selection because it measures how well the classifier separates risky from safe prompts without depending on
+one particular decision threshold. We also tracked precision and recall: precision tells us how often a risk warning
+is correct, while recall shows how many risky prompts are actually detected. F1 summarizes the balance between the
+two. The final model reached a validation ROC-AUC of 0.9283 and a test ROC-AUC of 0.9314, with test accuracy of 0.8456
+and F1 of 0.8121.
 
-We also configured a Bayesian W&B sweep with a cap of ten runs. It maximizes `val/roc_auc` while varying learning rate
-(1e-5 to 1e-4), batch size (8, 16, 32), weight decay (0, 0.01, 0.05), maximum token length (64, 128, 256) and two or
-three epochs. This records both successful and weak settings instead of keeping only the final result.
+![Training loss and validation metrics across W&B runs](figures/wandb_all_runs2.png)
+
+The third screenshot shows our Bayesian hyperparameter sweep. It was set up to compare learning rate, batch size,
+weight decay, maximum token length and the number of training epochs while maximizing validation ROC-AUC. We completed
+two sweep trials. This was enough to verify that the automated sweep setup worked and that W&B correctly recorded and
+compared the configurations. However, two trials are not enough for reliable conclusions about parameter importance,
+so we treated the sweep as an exploratory experiment rather than an exhaustive optimization. The final model was
+trained separately on Vertex AI using a stable configuration.
+
+![Two completed trials in the W&B Bayesian sweep](figures/wandb_sweep.png)
 
 ### Question 15
 
@@ -468,7 +478,19 @@ GitHub Actions rebuilds the training and API images on every push to `main`, and
 >
 > Answer:
 
---- question 16 fill here ---
+When debugging, we always started with the smallest setup that could reproduce the problem. We invested
+time in deterministic unit tests to check data loading, model construction, training and serving separately. Before
+every complete training run, we first ran a short smoke test with only a few batches. We used the same approach for
+dataloaders, inspecting individual batches before adding workers or switching to distributed training. For
+cloud-specific problems, we used tracebacks, W&B logs and GCP logs. Failed and cancelled Vertex AI smoke jobs helped
+us debug DVC access, credentials, CUDA/DDP settings and the container entrypoint before the successful final DDP run.
+
+We did not assume that the code was already optimal. Lightning's SimpleProfiler showed which training actions consumed
+the most time, while PyTorchProfiler recorded operator shapes, CPU time and memory use. The profiles showed that model
+forward and backward passes dominated runtime and that fixed padding expanded every batch to 128 tokens, although the
+average prompt contained only 53.91 tokens. We therefore introduced dynamic batch padding and deterministic
+length-grouped sampling. In a matched 100-batch CPU profile, the mean padded width fell to 56.67 tokens and total fit
+time decreased from 62.527 seconds to 31.360 seconds, an improvement of 49.85%.
 
 ## Working in the cloud
 
@@ -507,16 +529,19 @@ p95 latency. The storage/training resources are in `mlops-project-work`; the dep
 >
 > Answer:
 
-We used Compute Engine for an earlier GPU training setup in the `mlops-project-work` project. The instance
-`shapiq-train-gpu` was created in `us-west4-a` as an `n1-standard-4` VM (4 vCPUs and 15 GB memory) with one NVIDIA
-Tesla T4, a 200 GB persistent boot disk and Ubuntu 22.04. The CUDA 12.4 training image and the single-GPU Hydra profile
-allowed the same containerized Lightning pipeline used locally to run with mixed precision on this VM. Data and model
-artifacts were exchanged through the DVC GCS remote rather than copied manually.
+We first used Compute Engine to train the classifier with a conventional single-GPU PyTorch training loop. The
+`shapiq-train-gpu` instance in `us-west4-a` was an `n1-standard-4` VM with 4 vCPUs, 15 GB RAM, one NVIDIA Tesla T4 and
+a 200 GB persistent disk. We ran our custom GPU training container on the VM rather than installing the complete
+environment manually. The container pulled the versioned training data from the DVC Cloud Storage remote and executed
+the same PyTorch code that we had developed locally. At this stage, the training pipeline did not yet use Lightning,
+DDP or 16-bit mixed precision.
 
-The VM is now `TERMINATED`, so it does not continue consuming compute resources after training. We did not host the
-API on Compute Engine: serving is handled by Cloud Run, which can scale to zero. After validating the GPU container
-and training flow, we used Vertex AI Custom Jobs for the final distributed run, because Vertex manages job lifecycle
-and provisions the requested multi-GPU worker automatically.
+We later refactored the training code into a LightningModule and LightningDataModule so that distributed execution
+could be configured without implementing the DDP process management ourselves. For the final training, we therefore
+moved from the manually managed Compute Engine VM to a Vertex AI Custom Job. Vertex AI automatically provisioned and
+managed one `n1-standard-16` worker with 16 vCPUs, approximately 60 GB RAM, two NVIDIA Tesla T4 GPUs and a 100 GB SSD.
+The updated CUDA container pulled the DVC datasets and started the Lightning pipeline with the `ddp` Hydra profile,
+which used both GPUs with DDP and 16-bit mixed precision.
 
 ### Question 19
 
@@ -527,10 +552,9 @@ and provisions the requested multi-GPU worker automatically.
 
 <!-- Add 1-2 screenshots of the GCP buckets here. -->
 
-An authenticated `gcloud storage ls` on 18 July 2026 showed that the DVC bucket contained 39 content-addressed objects
-(1.06 GiB), including raw/processed datasets, model versions, metrics and the final Vertex DDP metadata. The monitoring
-bucket contained the 11.22 MiB training baseline used by Evidently; prediction objects are added by deployed API
-traffic.
+! [Our buckets on GCP](figures/gcp_bucket1.png)
+
+! [Inside our training data bucket](figures/gcp_bucket2.png)
 
 ### Question 20
 
@@ -539,7 +563,9 @@ traffic.
 >
 > Answer:
 
---- question 20 fill here ---
+! [Our artifact registry](figures/artifact_registry1.png)
+
+! [Training image inside the registry](figures/artifact_registry1.png)
 
 ### Question 21
 
@@ -563,21 +589,19 @@ traffic.
 >
 > Answer:
 
-Yes. The final model was trained with a Vertex AI Custom Job named `shapiq-ddp-train` in `us-central1`. Vertex pulled
-our custom CUDA 12.4 image from Artifact Registry and provisioned one `n1-standard-16` worker with two NVIDIA Tesla T4
-GPUs and a 100 GB SSD. Inside the container, the entrypoint pulled the versioned train/validation/test splits from the
-DVC GCS remote and ran:
+Yes, we trained the model in the cloud using both Compute Engine and Vertex AI. We initially used a Compute Engine
+VM because our training code was still a conventional single-GPU PyTorch loop. The `shapiq-train-gpu` VM was an
+`n1-standard-4` instance with one NVIDIA Tesla T4. It ran our custom GPU container, pulled the versioned datasets from
+the DVC Cloud Storage remote and executed the training code tested locally. This was the
+simplest way to move the existing single-GPU pipeline into the cloud and helped us validate the container, CUDA setup
+and data access.
 
-```bash
-python -m shapiq_attribution.train hardware=ddp
-```
-
-The `ddp` Hydra profile selects Lightning's distributed data parallel strategy, two devices and 16-bit mixed
-precision. Successful outputs were committed and pushed back through DVC, and `dvc.lock` plus
-`reports/metrics.json` were uploaded under `vertex-ddp/latest/`. The final job completed successfully on 18 July 2026
-in about nine minutes. We also ran smaller smoke jobs first; their failed/cancelled states helped debug the container
-before the successful runs. W&B credentials for online cloud logging were stored in Secret Manager rather than in
-source code.
+After refactoring the training pipeline to Lightning, we moved to Vertex AI for distributed training. The final
+Vertex AI Custom Job used one `n1-standard-16` worker with two Tesla T4 GPUs. Vertex AI handled provisioning, job
+lifecycle and the multi-GPU environment, while Lightning handled DDP inside the container through the `hardware=ddp`
+Hydra profile. The container again pulled the DVC-versioned train, validation and test splits from Cloud Storage,
+logged the run to W&B and pushed the resulting model and metrics back through DVC. We chose Vertex AI because it made
+the final two-GPU DDP training easier to reproduce and manage than configuring a multi-GPU VM manually.
 
 ## Deployment
 
@@ -669,17 +693,18 @@ Yes, monitoring works in three layers. First, data collection: every `/predict` 
 >
 > Answer:
 
-The exact credit consumption is not stored in Git, DVC or the resource metadata available through `gcloud`, and no
-BigQuery billing export was configured. Therefore the final billing values still have to be copied from the course
-billing pages: Sofiia used **[add credits]**, Lennart used **[add credits]**, for **[add total] credits** in total. We
-do not want to invent a financial value that cannot be verified from the project.
+Together, we used approximately $15 of cloud credits during the project. Sofiia spent around $1, mainly on serving
+the API through Cloud Run, while Lennart spent around $14, mainly on model training. The largest costs came from GPU
+compute: first the single-T4 Compute Engine VM and later the two-T4 Vertex AI jobs. Both team members also used Cloud
+Storage for datasets, models and monitoring data, but this was comparatively inexpensive.
 
-From the resource inventory, Vertex AI GPU training was the most expensive service. The final job used an
-`n1-standard-16` worker with two T4 GPUs, and several preceding smoke/debug jobs also allocated Vertex resources. The
-single-T4 Compute Engine VM was the next relevant compute cost, although it is now terminated. Cloud Run was
-comparatively economical because the service scales to zero, while the roughly 1.06 GiB DVC bucket has negligible
-storage cost. Working in the cloud made jobs and deployment reproducible and shareable, but IAM, quotas, regions and
-cost visibility required more setup and careful cleanup than local development.
+We kept costs low by running data processing, unit tests, API tests and most debugging locally on CPU. Before complete
+GPU training runs, we used small fixtures and short smoke tests to catch problems with the container, DVC access,
+credentials and training configuration.
+
+The cloud gave us access to GPUs, simplified distributed training and allowed us to serve the API publicly. Long jobs
+continued independently, so we could use our computers for other work or leave while training was running. However,
+IAM permissions, quotas and cost control required more attention than local development.
 
 ### Question 28
 
