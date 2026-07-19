@@ -18,7 +18,7 @@ score with Shapley interaction values — surfacing the tokens and token interac
 that drive risky and safe predictions.
 
 <p align="center">
-  <img src="reports/image.png" alt="Prompt-Risk Attribution web UI" width="650">
+  <img src="reports/figures/interface.png" alt="Prompt-Risk Attribution web UI" width="650">
 </p>
 
 <p align="center">

@@ -772,6 +772,8 @@ IAM permissions, quotas and cost control required more attention than local deve
 
 Yes. We implemented a frontend for our API: a dependency-free single-page HTML/CSS/JS app embedded in `web.py` and served at `/` by the same FastAPI container. We did this so the classifier and especially the SHAPIQ explanations are usable by non-technical users — the page shows the risk score and colors each word of the prompt by its Shapley value. Secondly, we split our infrastructure across two GCP projects (data/training vs. serving/monitoring, mirroring our team split), connected by a least-privilege bucket-level IAM grant. Finally, we published an [MkDocs (Material) documentation site](https://ssophiee.github.io/shapiq-prompt-risk-attribution/) to GitHub Pages, with getting-started, API, training, monitoring guides and a code reference.
 
+![Our web frontend: risk score plus per-word Shapley attribution for a prompt](figures/interface.png)
+
 ### Question 29
 
 > **Include a figure that describes the overall architecture of your system and what services that you make use of.**
