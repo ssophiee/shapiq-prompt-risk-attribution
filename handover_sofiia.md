@@ -350,6 +350,356 @@ uv run python -m shapiq_attribution.train hardware=single_gpu
 uv run python -m shapiq_attribution.train hardware=ddp
 ```
 
+## Distributed training with DDP
+
+### What DDP means in this project
+
+DDP stands for PyTorch Distributed Data Parallel. Our setup uses **one machine with two CUDA GPUs**, not two separate
+machines. Lightning starts one Python training process per GPU:
+
+```text
+Vertex AI worker or two-GPU host
+├── rank 0 → GPU 0 → one complete DistilBERT replica
+└── rank 1 → GPU 1 → one complete DistilBERT replica
+```
+
+Both processes execute the same training code, but they receive different portions of each epoch's data. Each process
+performs its own forward and backward pass. During the backward pass, DDP averages the gradients across both processes
+with an all-reduce operation. Both optimizers then apply the same synchronized gradients, so the two model replicas
+remain identical after every optimizer step.
+
+The high-level sequence for one training step is:
+
+```text
+                         full logical training step
+                                      │
+                   ┌──────────────────┴──────────────────┐
+                   │                                     │
+          rank 0 / GPU 0                        rank 1 / GPU 1
+          receives batch A                      receives batch B
+                   │                                     │
+              forward pass                          forward pass
+                   │                                     │
+              local backward                       local backward
+                   └──────── gradient all-reduce ────────┘
+                                      │
+                           averaged gradients
+                                      │
+                   both ranks run the optimizer step
+                                      │
+                         identical model parameters
+```
+
+DDP is data parallelism: it increases throughput by processing more examples at the same time. It does not split
+DistilBERT itself across the GPUs, and it does not reduce the amount of GPU memory required for one model replica.
+Each GPU must be able to hold the complete model, optimizer state, gradients, and its local batch.
+
+### DDP Hydra profile
+
+The complete project-specific DDP configuration is in `configs/hardware/ddp.yaml`:
+
+```yaml
+# @package training
+accelerator: gpu
+devices: 2
+strategy: ddp
+num_nodes: 1
+precision: 16-mixed
+num_workers: 4
+pin_memory: true
+persistent_workers: true
+```
+
+Each value has a specific role:
+
+| Setting | Meaning |
+| --- | --- |
+| `accelerator: gpu` | Requires CUDA and selects Lightning's GPU accelerator |
+| `devices: 2` | Starts two training processes and assigns one visible GPU to each process |
+| `strategy: ddp` | Enables synchronous PyTorch Distributed Data Parallel |
+| `num_nodes: 1` | Declares that both GPUs are attached to the same machine |
+| `precision: 16-mixed` | Uses FP16 where safe and FP32 where needed through automatic mixed precision |
+| `num_workers: 4` | Creates four DataLoader workers per DDP process, eight in total |
+| `pin_memory: true` | Uses pinned host memory for faster CPU-to-GPU transfers |
+| `persistent_workers: true` | Keeps DataLoader workers alive between epochs |
+
+Hydra applies this file to the `training` section of `configs/train.yaml`. The model, data paths, optimizer settings,
+checkpoint settings, and W&B settings continue to come from the main configuration. Only the hardware-related values
+are replaced.
+
+### How Lightning activates DDP
+
+`src/shapiq_attribution/train.py` passes the resolved Hydra values directly to `lightning.Trainer`:
+
+```python
+trainer = L.Trainer(
+    accelerator=str(cfg.training.accelerator),
+    devices=int(cfg.training.devices),
+    strategy=str(cfg.training.strategy),
+    num_nodes=int(cfg.training.num_nodes),
+    precision=cfg.training.precision,
+    accumulate_grad_batches=int(cfg.training.accumulate_grad_batches),
+    # remaining configuration omitted
+)
+```
+
+With `hardware=ddp`, Lightning is responsible for:
+
+- launching the two worker processes;
+- assigning local ranks and GPUs;
+- initializing the PyTorch distributed process group;
+- broadcasting the initial model state;
+- wrapping the model in `DistributedDataParallel`;
+- synchronizing gradients after backward passes;
+- coordinating checkpoint loading and loop transitions;
+- shutting down the distributed process group at the end.
+
+No manual calls to `torch.distributed.init_process_group`, `torchrun`, or gradient all-reduce are needed in our code.
+The same Python entrypoint is used for local, single-GPU, and DDP training.
+
+### Data distribution and sampling
+
+`PromptRiskDataModule` constructs the same logical dataset on both ranks. Lightning's
+`use_distributed_sampler=True` default detects the distributed strategy and injects a distributed sampler into every
+DataLoader.
+
+For the normal validation and test loaders, Lightning replaces the sequential sampler with a
+`DistributedSampler`. For the training loader, it wraps our custom `LengthGroupedSampler` in a
+`DistributedSamplerWrapper`. This preserves the length-based ordering while assigning a different subset of indices
+to each rank.
+
+The resulting behavior is:
+
+- the training examples are deterministically shuffled and grouped by approximate token length;
+- rank 0 and rank 1 receive different shards of that ordered index stream;
+- both ranks process the same number of optimizer steps;
+- dynamic padding still happens independently for the local batch on each GPU;
+- the sampler seed is derived from the configured global seed;
+- the sampling order changes deterministically between epochs.
+
+This interaction is important because dynamic padding and length grouping still provide the profiling optimization
+under DDP, while distributed sampling prevents both GPUs from processing the same full dataset.
+
+### Local and global batch size
+
+`training.batch_size` is a **per-device batch size**. The effective global batch size is:
+
+```text
+batch_size_per_device
+× number_of_devices
+× number_of_nodes
+× accumulate_grad_batches
+```
+
+With the current defaults:
+
+```text
+16 × 2 × 1 × 1 = 32 examples per optimizer step
+```
+
+The global batch size is calculated in `train.py` and logged to W&B as `training.global_batch_size`.
+
+This is a key difference from single-GPU training. Running the same configuration with `hardware=single_gpu` uses a
+global batch size of 16, while `hardware=ddp` uses 32. If an experiment must keep the global batch size at 16, set the
+per-device batch size to 8:
+
+```bash
+uv run python -m shapiq_attribution.train \
+  hardware=ddp \
+  training.batch_size=8
+```
+
+Gradient accumulation multiplies the global batch size again. For example, `batch_size=8`, two GPUs, and
+`accumulate_grad_batches=2` also produce an effective global batch size of 32, but the optimizer updates only after two
+local batches per rank.
+
+### Mixed precision
+
+The DDP profile uses `precision: 16-mixed`. Lightning enables automatic mixed precision and gradient scaling:
+
+- suitable tensor operations run in FP16 for higher GPU throughput and lower activation memory;
+- numerically sensitive operations remain in FP32;
+- gradient scaling reduces the risk of FP16 underflow;
+- the final exported model remains a normal Hugging Face model and does not require mixed-precision inference.
+
+The CUDA training image installs the PyTorch CUDA 12.4 build through the `cu124` dependency extra. The host or Vertex
+AI worker must expose compatible NVIDIA drivers and at least two visible GPUs.
+
+### Distributed metrics and model selection
+
+Each rank sees only its own validation and test shard, so local metrics would be incomplete. The Lightning module
+therefore synchronizes metric state and logged values across ranks:
+
+```python
+self.log(..., sync_dist=True)
+self.log_dict(metrics, sync_dist=True)
+```
+
+The synchronized values include:
+
+- training loss;
+- validation and test loss;
+- accuracy;
+- precision;
+- recall;
+- F1;
+- ROC-AUC.
+
+Checkpoint selection therefore uses the globally aggregated `val/roc_auc`, not the ROC-AUC of rank 0's local shard.
+After fitting, both `trainer.validate(..., ckpt_path="best")` and `trainer.test(..., ckpt_path="best")` load and
+evaluate the selected checkpoint under the same distributed strategy.
+
+### Rank-zero side effects
+
+All DDP ranks execute most of `train_model`, but only global rank zero is allowed to write final artifacts:
+
+```python
+if trainer.is_global_zero:
+    save_prompt_risk_model(...)
+    metrics_path.write_text(...)
+    log_model_artifact(...)
+```
+
+This prevents both processes from writing the same model files, metrics file, or W&B artifact concurrently. After the
+rank-zero writes, `trainer.strategy.barrier()` makes every rank wait until the final artifacts are complete before the
+training process exits.
+
+Lightning's checkpoint callback is also distributed-aware. The checkpoint represents the synchronized model state,
+so it is not necessary to merge two separately trained models after the run.
+
+### DVC integration
+
+The canonical DVC stage is:
+
+```yaml
+train_vertex_ddp:
+  cmd: uv run python -m shapiq_attribution.train hardware=ddp
+```
+
+It declares the three processed splits, training code, model code, hardware profiles, and main Hydra configuration as
+dependencies. Its versioned outputs are:
+
+```text
+models/prompt_risk_distilbert/
+reports/metrics.json
+```
+
+On a two-GPU machine with the data already restored, the complete DVC-controlled run is:
+
+```bash
+uv run dvc repro train_vertex_ddp
+```
+
+After a successful managed cloud run, the container entrypoint can commit and push the outputs:
+
+```text
+TRAIN_HARDWARE_PROFILE=ddp
+PUSH_DVC_ON_SUCCESS=true
+DVC_COMMIT_STAGE=train_vertex_ddp
+```
+
+`dockerfiles/train-entrypoint.sh` explicitly rejects `PUSH_DVC_ON_SUCCESS=true` for the `train_vertex_ddp` stage when
+the active hardware profile is not `ddp`. This protects the provenance recorded in `dvc.lock`.
+
+### Running a DDP smoke test
+
+Before launching a full cloud job, a short run can verify GPU visibility, process startup, distributed sampling,
+gradient synchronization, checkpointing, and validation:
+
+```bash
+nvidia-smi
+
+uv run python -m shapiq_attribution.train \
+  hardware=ddp \
+  wandb.mode=disabled \
+  training.epochs=1 \
+  training.limit_train_batches=4 \
+  training.limit_val_batches=2 \
+  training.limit_test_batches=2
+```
+
+The command still requires both GPUs and all three processed JSONL splits, but completes much faster than a full
+training job.
+
+Useful signs in the Lightning output are:
+
+- `GLOBAL_RANK: 0` and `GLOBAL_RANK: 1`;
+- both CUDA devices are registered;
+- the strategy is reported as DDP;
+- both ranks complete the same number of steps;
+- only one final model directory and metrics file are written.
+
+### Running DDP in the GPU container
+
+The GPU image supports DDP, but the host must expose both GPUs to the container. A direct Docker run can use:
+
+```bash
+docker build \
+  --platform linux/amd64 \
+  -t shapiq-train-gpu:latest \
+  -f dockerfiles/train.gpu.dockerfile .
+
+docker run --rm --gpus all \
+  -e TRAIN_HARDWARE_PROFILE=ddp \
+  -e SKIP_DVC_PULL=true \
+  -e WANDB_MODE=offline \
+  -v "$PWD/data:/app/data" \
+  -v "$PWD/models:/app/models" \
+  -v "$PWD/reports:/app/reports" \
+  -v "$PWD/configs:/app/configs" \
+  shapiq-train-gpu:latest
+```
+
+`SKIP_DVC_PULL=true` is appropriate when the processed data is mounted from the host. Without it, the container needs
+GCP credentials and will pull the three processed splits from DVC before training.
+
+The current `train-gpu` Docker Compose service is configured for `single_gpu` and reserves one GPU. It is intended for
+single-GPU development. The two-GPU DDP path uses the same GPU image through Vertex AI or a direct Docker invocation
+that exposes both GPUs.
+
+### Vertex AI topology
+
+The final training run used one Vertex AI worker with two attached Tesla T4 GPUs:
+
+```text
+Vertex AI Custom Job
+└── 1 × n1-standard-16 worker
+    ├── Tesla T4 GPU 0 → DDP rank 0
+    └── Tesla T4 GPU 1 → DDP rank 1
+```
+
+This matches `num_nodes: 1` and `devices: 2`. It is single-node, multi-GPU DDP. A multi-node Vertex setup would need
+additional worker replicas and a matching `num_nodes` configuration; that is a different topology from the one used
+for the final model.
+
+The Vertex container sequence is:
+
+1. Vertex AI provisions the worker and exposes both GPUs.
+2. The training entrypoint selects `TRAIN_HARDWARE_PROFILE=ddp`.
+3. The entrypoint pulls the DVC-versioned train, validation, and test splits.
+4. Lightning starts two local DDP ranks.
+5. Both ranks train synchronously with mixed precision.
+6. Global validation ROC-AUC selects the best checkpoint.
+7. Rank 0 exports the Hugging Face model and `reports/metrics.json`.
+8. The entrypoint commits and pushes the DVC outputs when configured.
+9. Optional metadata upload copies `dvc.lock` and the metrics JSON to the configured metadata bucket.
+
+### DDP component map
+
+| Component | DDP responsibility |
+| --- | --- |
+| `configs/hardware/ddp.yaml` | Selects two GPUs, DDP, one node, mixed precision, and GPU DataLoader settings |
+| `configs/train.yaml` | Supplies the per-device batch size, accumulation, seed, checkpoint, and W&B settings |
+| `src/shapiq_attribution/train.py` | Creates the Lightning Trainer, calculates global batch size, and limits final writes to rank 0 |
+| `src/shapiq_attribution/lightning_module.py` | Defines the replicated model, synchronized losses and metrics, optimizer, and scheduler |
+| `src/shapiq_attribution/lightning_data_module.py` | Creates the datasets, dynamic collator, and length-grouped sampler |
+| Lightning | Launches ranks, assigns GPUs, injects distributed samplers, synchronizes gradients, and coordinates loops |
+| PyTorch DDP/NCCL | Performs GPU-to-GPU gradient communication |
+| `dockerfiles/train.gpu.dockerfile` | Provides CUDA 12.4 and the matching PyTorch build |
+| `dockerfiles/train-entrypoint.sh` | Selects the DDP profile, pulls data, starts training, and handles successful DVC publication |
+| `dvc.yaml` | Defines the canonical `train_vertex_ddp` stage and its versioned dependencies and outputs |
+| Vertex AI | Provisions and manages the one-worker, two-GPU cloud environment |
+
 ## Profiling and performance optimization
 
 I integrated both Lightning Simple Profiling and PyTorch Profiling.
