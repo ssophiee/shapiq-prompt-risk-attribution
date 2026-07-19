@@ -105,7 +105,7 @@ will check the repositories and the code to verify your answers.
 * [x] Deploy your model in GCP using either Functions or Run as the backend (M23)
 * [x] Write API tests for your application and setup continues integration for these (M24)
 * [x] Load test your application (M24)
-    * *Locust (`locustfile.py`, `invoke load-test`) simulating mixed traffic against the deployed Cloud Run service — weighted mostly `/predict`, plus `/health`, the frontend, and occasional low-budget `/attribute` calls. Result: 266 requests, 0 failures; `/predict` median 240 ms / p95 380 ms / p99 520 ms, low-budget `/attribute` median ~500 ms.*
+    * *Locust (`locustfile.py`, `invoke load-test`) simulating mixed traffic against the deployed Cloud Run service — weighted mostly `/predict`, plus `/health`, the frontend, and occasional low-budget `/attribute` calls. Result: 5533 requests, 99.8% success; `/predict` median 350 ms / p95 900 ms / p99 1.2 s, low-budget `/attribute` median 590 ms.*
 * [ ] Create a more specialized ML-deployment API using either ONNX or BentoML, or both (M25)
 * [x] Create a frontend for your API (M26)
     * *Dependency-free single-page HTML/CSS/JS UI, embedded in `web.py` and served by the same FastAPI container at `/`.*
@@ -695,9 +695,15 @@ The same pattern with a `budget` field calls `/attribute` for explanations, and 
 >
 > Answer:
 
-Yes, both. For functional testing we use pytest with FastAPI's `TestClient` (`tests/test_api.py`, 10 tests): the model-loading dependency is overridden with a deterministic stub predictor, so the tests verify endpoint behaviour — response schemas, the risky/safe thresholding, validation errors, the Prometheus `/metrics` counters, and the `/monitoring` drift report built from local CSVs — quickly and offline. These API tests also run in CI on every push.
+Yes, both. For functional testing we use pytest with FastAPI's `TestClient` (`tests/test_api.py`, 10 tests): the model-loading dependency is replaced with a deterministic stub predictor, so response schemas, risky/safe thresholding, validation errors, the `/metrics` counters and the `/monitoring` report are verified quickly and offline. These tests also run in CI on every push.
 
-For load testing we used Locust (`locustfile.py`, run via `invoke load-test`) against the actually deployed Cloud Run service, simulating users with realistic think time and a weighted endpoint mix: mostly `/predict`, some `/health` and frontend loads, and occasional `/attribute` calls at a small budget. The results: 266 requests with 0 failures; `/predict` had a median of 240 ms, p95 of 380 ms and p99 of 520 ms, `/health` and the frontend stayed around 40-55 ms, and low-budget `/attribute` calls took ~500 ms. The service handled the concurrent load without errors, confirming that the 2 vCPU / 2 GiB Cloud Run configuration is adequate for this traffic level.
+For load testing we ran Locust (`locustfile.py`, `invoke load-test`) against the deployed Cloud Run service with a realistic endpoint mix: mostly `/predict`, some `/health` and frontend loads, occasional low-budget `/attribute` calls. With 10 concurrent users at ~6 req/s the service answered 5533 requests with 99.8% success; `/predict` had a median of 350 ms and p95 of 900 ms, `/attribute` a median of 590 ms. The Cloud Run logs traced the few `/predict` 500s (about which our Cloud Monitoring policy alerted us by email, see below) to `RuntimeError: Already borrowed` — a thread-safety limitation of the shared HuggingFace fast tokenizer under concurrent requests; the remaining failures were network blips on the load-generating machine. Overall the 2 vCPU / 2 GiB configuration handled the load comfortably.
+
+![Locust statistics during a load-test run against the deployed Cloud Run service](figures/locust_load_test.png)
+
+![Locust request rate and response-time percentiles over the course of the run](figures/locust_load_test_charts.png)
+
+![The 5xx alert incident triggered by the load test's 500 responses](figures/cloud_alert_load_test_incident.png)
 
 ### Question 26
 
@@ -713,6 +719,12 @@ For load testing we used Locust (`locustfile.py`, run via `invoke load-test`) ag
 > Answer:
 
 Yes, monitoring works in three layers. First, data collection: every `/predict` and `/attribute` call mirrors its prompt, input statistics (`prompt_len`, `token_count`) and predicted probability to a GCS bucket via background tasks. Second, drift detection: `GET /monitoring` on the deployed service fetches the training-set baseline plus all logged prediction rows and renders an Evidently report — data-drift tests on prompt length, token count and `p_risky`, plus a health test that the mean predicted risk stays in [0.2, 0.8], which would catch a model that collapsed to predicting everything safe (or risky) even without input drift. Third, system monitoring: the API exposes Prometheus metrics (request counts per endpoint and status code, latency histograms, a risky-vs-safe label counter), and Google Cloud Monitoring watches Cloud Run's request metrics with two email alert policies: any 5xx responses within 5 minutes, and p95 latency above 30 s. This monitoring proved itself: a real 5xx alert fired, the request logs pointed to slow cold starts (the container re-installed dev dependencies at startup), and we fixed the Docker entrypoint as a result.
+
+The Metrics Explorer view below shows this system monitoring during our Locust load test: the request rate (blue)
+rises to about 0.7 req/s while the 50th-percentile latency (green) stays flat around 150–180 ms, confirming the
+service handles the load without degrading.
+
+![Cloud Run request count and p50 latency during the Locust load test](figures/cloud_monitoring_load_test.png)
 
 ## Overall discussion of project
 
