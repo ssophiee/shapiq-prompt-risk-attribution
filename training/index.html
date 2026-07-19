@@ -518,10 +518,43 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#profiling-and-optimized-batching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Profiling and optimized batching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#data-versioning" class="md-nav__link">
     <span class="md-ellipsis">
       
         Data versioning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#continuous-data-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuous data checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#continuous-model-registry-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuous model registry checks
       
     </span>
   </a>
@@ -688,10 +721,43 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#profiling-and-optimized-batching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Profiling and optimized batching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#data-versioning" class="md-nav__link">
     <span class="md-ellipsis">
       
         Data versioning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#continuous-data-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuous data checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#continuous-model-registry-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuous model registry checks
       
     </span>
   </a>
@@ -758,11 +824,122 @@ uv run dvc repro train_vertex_ddp                              # canonical produ
 hyperparameter sweep maximising <code>val/roc_auc</code>. In containers the W&amp;B API key
 can be injected from GCP Secret Manager (<code>WANDB_API_KEY_SECRET</code>), so no
 credentials live in code or images.</p>
+<h2 id="profiling-and-optimized-batching">Profiling and optimized batching</h2>
+<p>Profiling is optional and selected through Hydra. Normal training uses
+<code>profiling=disabled</code>; <code>profiling=simple</code> records Lightning action timings,
+while <code>profiling=pytorch</code> records operator shapes, CPU time and memory:</p>
+<pre><code class="language-bash">uv run python -m shapiq_attribution.train profiling=simple
+uv run python -m shapiq_attribution.train profiling=pytorch
+</code></pre>
+<p>A CPU baseline over 100 training batches showed that data loading used less
+than 1% of fit time, while the forward and backward passes dominated. The
+operator profile showed that every DistilBERT batch had shape
+<code>[16, 128, 768]</code>. The 27,894 training prompts contain only 53.91 tokens on
+average (median 21), so fixed padding wasted 57.88% of token positions.</p>
+<p>Training now tokenizes complete batches, pads only to the longest sequence in
+each batch, and uses deterministic length-grouped sampling. The sampler still
+reshuffles every epoch and Lightning wraps it for distributed training. Over
+the same 100 CPU batches, the mean padded width fell from 128 to 56.67 tokens
+and the measured fit time fell from 62.527 s to 31.360 s:</p>
+<table>
+<thead>
+<tr>
+<th>Measurement</th>
+<th style="text-align: right;">Fixed padding</th>
+<th style="text-align: right;">Optimized</th>
+<th style="text-align: right;">Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mean padded batch width</td>
+<td style="text-align: right;">128.00</td>
+<td style="text-align: right;">56.67</td>
+<td style="text-align: right;">-55.73%</td>
+</tr>
+<tr>
+<td>Total fit profiler time</td>
+<td style="text-align: right;">62.527 s</td>
+<td style="text-align: right;">31.360 s</td>
+<td style="text-align: right;">-49.85%</td>
+</tr>
+<tr>
+<td>Training-batch time</td>
+<td style="text-align: right;">59.750 s</td>
+<td style="text-align: right;">28.335 s</td>
+<td style="text-align: right;">-52.58%</td>
+</tr>
+<tr>
+<td>Mean <code>training_step</code> time</td>
+<td style="text-align: right;">205.37 ms</td>
+<td style="text-align: right;">90.26 ms</td>
+<td style="text-align: right;">-56.05%</td>
+</tr>
+</tbody>
+</table>
+<p>Profiler traces and temporary checkpoints are written below
+<code>outputs/profiling/</code>, which is ignored by Git.</p>
 <h2 id="data-versioning">Data versioning</h2>
 <p>DVC with a Google Cloud Storage remote (<code>gs://prompt_classifier_mlops</code>). Raw
 snapshots are tracked via <code>data/raw.dvc</code>; processed data, the served model
 and metrics are pipeline outputs declared in <code>dvc.yaml</code> and recorded in
 <code>dvc.lock</code>.</p>
+<h2 id="continuous-data-checks">Continuous data checks</h2>
+<p>The <code>cml-data</code> GitHub Actions workflow follows the course's continuous
+machine-learning pattern. Pushes and pull requests that change <code>.dvc</code> files,
+the <code>.dvc/</code> configuration, <code>dvc.yaml</code> or <code>dvc.lock</code> trigger the workflow. It:</p>
+<ol>
+<li>authenticates to GCP with the <code>GCP_SA_KEY</code> repository secret;</li>
+<li>pulls the DVC-tracked raw snapshots from Cloud Storage;</li>
+<li>reproduces normalization and deterministic train/validation/test splitting;</li>
+<li>runs the data and split tests;</li>
+<li>generates a text-only Markdown report with class balance, source balance,
+   duplicates and cross-split overlap checks;</li>
+<li>uploads the report as a workflow artifact and updates a CML comment on pull
+   requests.</li>
+</ol>
+<p>The same integrity report can be generated locally:</p>
+<pre><code class="language-bash">uv run python -m shapiq_attribution.data_statistics --check
+</code></pre>
+<p>The command exits with status 1 if the splits do not reconstruct the processed
+dataset, prompts leak between splits, a dataset is empty, or duplicate prompts
+are present.</p>
+<h2 id="continuous-model-registry-checks">Continuous model registry checks</h2>
+<p>The <code>stage-model</code> workflow implements the second M19 continuous-machine-learning
+pattern. Online training runs publish the exported Hugging Face directory and
+<code>reports/metrics.json</code> as a versioned W&amp;B model artifact, link it to
+<code>wandb-registry-Models/prompt-risk-distilbert</code>, and initially assign the
+<code>candidate</code> alias. An already trained local model can be published without
+retraining:</p>
+<pre><code class="language-bash">WANDB_ENTITY=&lt;team&gt; WANDB_PROJECT=shapiq-attribution \
+uv run python -m shapiq_attribution.model_registry publish
+</code></pre>
+<p>Adding the <code>staging</code> alias in W&amp;B sends a <code>staged_model</code> repository dispatch to
+GitHub. The workflow downloads the exact staged model, pulls the DVC-versioned
+test split from GCS, and evaluates a deterministic balanced sample of 512
+examples. Promotion requires valid probabilities, predictions from both
+classes, F1 of at least 0.70, and ROC-AUC of at least 0.85. The resulting
+Markdown and JSON reports are retained as the <code>staged-model-validation</code>
+workflow artifact. Only a passing model is linked to the same Registry
+collection with the <code>production</code> alias.</p>
+<p>The workflow needs the GitHub repository secrets <code>WANDB_API_KEY</code>,
+<code>WANDB_ENTITY</code>, <code>WANDB_PROJECT</code>, and <code>GCP_SA_KEY</code>. Its automatic W&amp;B webhook
+payload is:</p>
+<pre><code class="language-json">{
+  &quot;event_type&quot;: &quot;staged_model&quot;,
+  &quot;client_payload&quot;: {
+    &quot;event_author&quot;: &quot;${event_author}&quot;,
+    &quot;artifact_version&quot;: &quot;${artifact_version}&quot;,
+    &quot;artifact_version_string&quot;: &quot;${artifact_version_string}&quot;,
+    &quot;artifact_collection_name&quot;: &quot;${artifact_collection_name}&quot;,
+    &quot;project_name&quot;: &quot;${project_name}&quot;,
+    &quot;entity_name&quot;: &quot;${entity_name}&quot;
+  }
+}
+</code></pre>
+<p>The workflow also has a manual <code>workflow_dispatch</code> input for testing and for
+W&amp;B plans without Registry Automations. The input must be the exact Registry
+artifact path shown by W&amp;B, including an immutable version such as <code>:v3</code>.</p>
 <h2 id="using-the-trained-classifier-from-python">Using the trained classifier from Python</h2>
 <pre><code class="language-python">from shapiq_attribution.model import PromptRiskPredictor
 

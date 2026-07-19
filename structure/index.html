@@ -639,7 +639,7 @@
 
 
 <h1 id="project-structure">Project structure</h1>
-<pre><code class="language-text">shapiq-cot-attribution/
+<pre><code class="language-text">shapiq-prompt-risk-attribution/
 ├── src/shapiq_attribution/      # the Python package
 │   ├── api.py                   # FastAPI app: /predict, /attribute, /monitoring, /metrics
 │   ├── web.py                   # embedded single-page frontend (served at /)
@@ -656,7 +656,7 @@
 │   ├── monitoring.py            # drift baseline, row collection, Evidently report
 │   ├── pipeline.py              # natural-reasoning CoT attribution (research)
 │   └── visualize.py             # attribution plots
-├── tests/                       # 84 offline tests (stubbed models/tokenizers)
+├── tests/                       # 93 offline tests (stubbed models/tokenizers)
 ├── configs/                     # Hydra configs: train.yaml, sweep.yaml, hardware/
 ├── data/                        # DVC-tracked (raw snapshots, processed dataset)
 ├── models/                      # DVC-tracked trained model
