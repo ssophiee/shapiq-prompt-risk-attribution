@@ -547,6 +547,11 @@ Monitoring** observes Cloud Run request counts and latency and sends email notif
 p95 latency. The storage/training resources are in `mlops-project-work`; the deployed API is in the separate
 `mlops-shapiq-project`.
 
+As an example of Cloud Monitoring in action, the screenshot below shows the email notification we received from our
+alerting policy when the deployed Cloud Run API returned 5xx errors:
+
+![alert email](figures/cloud_alert_5xx_email.png)
+
 ### Question 18
 
 > **The backbone of GCP is the Compute engine. Explained how you made use of this service and what type of VMs**
@@ -605,7 +610,9 @@ which used both GPUs with DDP and 16-bit mixed precision.
 >
 > Answer:
 
---- question 21 fill here ---
+![Cloud Build history of our API image builds](figures/cloud_build1.png)
+
+![Details of a successful build pushing the API image to the Artifact Registry](figures/cloud_build2.png)
 
 ### Question 22
 
