@@ -35,6 +35,7 @@ import csv
 import json
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,6 +58,14 @@ REPORT_HTML = Path("reports/monitoring/drift_report.html")
 
 # GCS prefix under which the deployed API drops one JSON blob per prediction.
 GCS_PREDICTIONS_PREFIX = "predictions/"
+
+# Newest prediction blobs fetched for a drift report. One blob is one HTTP
+# round trip, so an unbounded fetch grows linearly with traffic and eventually
+# outlives the Cloud Run request timeout; drift only needs a recent window.
+PREDICTIONS_FETCH_LIMIT = 1000
+
+# Concurrent GCS downloads during a fetch.
+FETCH_MAX_WORKERS = 32
 
 # GCS blob holding the training-set baseline (uploaded by deploy/cloudrun.sh).
 GCS_BASELINE_BLOB = "baseline.csv"
@@ -148,24 +157,30 @@ def fetch_predictions_gcs(
     bucket_name: str,
     out_path: str | Path = PREDICTIONS_CSV,
     client: object = None,
+    limit: int | None = PREDICTIONS_FETCH_LIMIT,
 ) -> tuple[Path, int]:
-    """Download all prediction blobs from GCS into a local predictions CSV.
+    """Download the newest prediction blobs from GCS into a local predictions CSV.
 
     Blob names start with a UTC timestamp, so sorting them by name restores
-    chronological order. The output CSV is overwritten, not appended to. Blobs
-    logged before the raw prompt was collected get an empty ``prompt`` cell.
+    chronological order; only the newest ``limit`` blobs are kept, downloaded
+    concurrently. The output CSV is overwritten, not appended to. Blobs logged
+    before the raw prompt was collected get an empty ``prompt`` cell.
 
     Args:
         bucket_name: Bucket the deployed API logs to (no ``gs://`` prefix).
         out_path: Destination CSV (same format as :func:`log_prediction`).
         client: Optional ``google.cloud.storage.Client`` (injected in tests).
+        limit: Keep only this many newest blobs (``None`` fetches everything).
 
     Returns:
         The path written and the number of prediction rows fetched.
     """
     bucket = _gcs_bucket(bucket_name, client)
     blobs = sorted(bucket.client.list_blobs(bucket_name, prefix=GCS_PREDICTIONS_PREFIX), key=lambda b: b.name)
-    rows = [json.loads(blob.download_as_text()) for blob in blobs]
+    if limit is not None:
+        blobs = blobs[-limit:]
+    with ThreadPoolExecutor(max_workers=min(FETCH_MAX_WORKERS, max(len(blobs), 1))) as pool:
+        rows = [json.loads(text) for text in pool.map(lambda blob: blob.download_as_text(), blobs)]
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -302,6 +317,12 @@ def cli() -> None:
         help="GCS bucket the deployed API logs to (default: $MONITORING_BUCKET).",
     )
     fetch_parser.add_argument("--out-path", default=str(PREDICTIONS_CSV))
+    fetch_parser.add_argument(
+        "--limit",
+        type=int,
+        default=PREDICTIONS_FETCH_LIMIT,
+        help=f"Newest blobs to fetch, 0 for everything (default: {PREDICTIONS_FETCH_LIMIT}).",
+    )
 
     report_parser = subparsers.add_parser("report", help="Generate the Evidently drift report.")
     report_parser.add_argument("--reference-path", default=str(BASELINE_CSV))
@@ -319,7 +340,7 @@ def cli() -> None:
     elif args.command == "fetch":
         if not args.bucket:
             parser.error("no bucket: pass --bucket or set MONITORING_BUCKET")
-        path, count = fetch_predictions_gcs(args.bucket, args.out_path)
+        path, count = fetch_predictions_gcs(args.bucket, args.out_path, limit=args.limit or None)
         print(f"Fetched {count} prediction rows from gs://{args.bucket} ({path})")
     elif args.command == "report":
         path = generate_report(args.reference_path, args.current_path, args.out_path)

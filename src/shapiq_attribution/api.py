@@ -242,7 +242,8 @@ def monitoring_report() -> str:
     Compares the feature distribution of logged predictions against the
     training-set baseline and renders the result as HTML. When
     ``MONITORING_BUCKET`` is set (Cloud Run) both sides come from GCS — the
-    baseline uploaded at deploy time and the rows logged by past requests;
+    baseline uploaded at deploy time and the newest logged prediction rows
+    (capped so the fetch stays well under the Cloud Run request timeout);
     otherwise the local CSVs under ``data/monitoring`` are used.
 
     The report is rebuilt on every call, so it can take a few seconds.

@@ -148,6 +148,21 @@ def test_fetch_predictions_gcs_rebuilds_local_csv(tmp_path: Path) -> None:
     assert sorted(row["prompt"] for row in rows) == ["bye", "hello there"]
 
 
+def test_fetch_predictions_gcs_limit_keeps_newest_rows(tmp_path: Path) -> None:
+    """A fetch limit drops the oldest blobs so report time stays bounded."""
+    client = FakeClient()
+    for index in range(3):
+        monitoring.log_prediction_gcs(monitoring.extract_features(f"prompt {index}", 0.5), "bucket", client)
+    out_path = tmp_path / "predictions.csv"
+
+    _, count = monitoring.fetch_predictions_gcs("bucket", out_path, client, limit=2)
+
+    assert count == 2
+    with out_path.open() as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["prompt"] for row in rows] == ["prompt 1", "prompt 2"]
+
+
 def test_fetch_baseline_gcs_downloads_csv(tmp_path: Path) -> None:
     """The deploy-time baseline blob is downloaded to the requested path."""
     client = FakeClient()
