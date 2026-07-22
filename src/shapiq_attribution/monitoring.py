@@ -299,7 +299,7 @@ def generate_report(
 
 
 def cli() -> None:
-    """Command-line entry point: ``baseline`` and ``report`` subcommands."""
+    """Command-line entry point: ``baseline``, ``fetch``, ``fetch-baseline`` and ``report`` subcommands."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Prompt-risk monitoring utilities.")
@@ -324,6 +324,16 @@ def cli() -> None:
         help=f"Newest blobs to fetch, 0 for everything (default: {PREDICTIONS_FETCH_LIMIT}).",
     )
 
+    fetch_baseline_parser = subparsers.add_parser(
+        "fetch-baseline", help="Download the deploy-time drift baseline from GCS."
+    )
+    fetch_baseline_parser.add_argument(
+        "--bucket",
+        default=os.environ.get("MONITORING_BUCKET"),
+        help="Monitoring bucket holding baseline.csv (default: $MONITORING_BUCKET).",
+    )
+    fetch_baseline_parser.add_argument("--out-path", default=str(BASELINE_CSV))
+
     report_parser = subparsers.add_parser("report", help="Generate the Evidently drift report.")
     report_parser.add_argument("--reference-path", default=str(BASELINE_CSV))
     report_parser.add_argument("--current-path", default=str(PREDICTIONS_CSV))
@@ -342,6 +352,11 @@ def cli() -> None:
             parser.error("no bucket: pass --bucket or set MONITORING_BUCKET")
         path, count = fetch_predictions_gcs(args.bucket, args.out_path, limit=args.limit or None)
         print(f"Fetched {count} prediction rows from gs://{args.bucket} ({path})")
+    elif args.command == "fetch-baseline":
+        if not args.bucket:
+            parser.error("no bucket: pass --bucket or set MONITORING_BUCKET")
+        path = fetch_baseline_gcs(args.bucket, args.out_path)
+        print(f"Fetched baseline from gs://{args.bucket} ({path})")
     elif args.command == "report":
         path = generate_report(args.reference_path, args.current_path, args.out_path)
         print(f"Wrote report ({path})")

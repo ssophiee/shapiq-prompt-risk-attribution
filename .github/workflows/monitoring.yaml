@@ -29,10 +29,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra cpu
 
-      - name: Pull monitoring data from DVC
-        # Best-effort: the report can still run if the data is already committed.
-        continue-on-error: true
-        run: uv run dvc pull data/monitoring/baseline.csv data/monitoring/predictions.csv
+      - name: Authenticate with GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Fetch monitoring data from GCS
+        # Baseline is uploaded by deploy/cloudrun.sh; predictions are logged
+        # by the deployed API, one JSON blob per /predict call.
+        env:
+          MONITORING_BUCKET: mlops-shapiq-project-monitoring
+        run: |
+          uv run python -m shapiq_attribution.monitoring fetch-baseline
+          uv run python -m shapiq_attribution.monitoring fetch
 
       - name: Generate Evidently drift report
         run: uv run python -m shapiq_attribution.monitoring report
